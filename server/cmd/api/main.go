@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"housing/internal/admin"
 	"housing/internal/auth"
 	"housing/internal/building"
 	"housing/internal/config"
@@ -56,6 +57,11 @@ func main() {
 		log.Error("init jwt", "err", err)
 		os.Exit(1)
 	}
+	adminTokens, err := auth.NewManagerWithIssuer(cfg.AdminJWTSecret, cfg.AdminJWTAccessTTL, "housing-admin")
+	if err != nil {
+		log.Error("init admin jwt", "err", err)
+		os.Exit(1)
+	}
 
 	userRepo := user.NewRepository(pool)
 	userSvc := user.NewService(userRepo, pii, tokens)
@@ -74,11 +80,16 @@ func main() {
 	contactSvc := contact.NewService(contactRepo, pii)
 	contactHandler := contact.NewHandler(contactSvc)
 
-	router := httpapi.NewRouter(cfg, log, tokens, httpapi.Handlers{
+	adminRepo := admin.NewRepository(pool)
+	adminSvc := admin.NewService(adminRepo, pii, adminTokens)
+	adminHandler := admin.NewHandler(adminSvc)
+
+	router := httpapi.NewRouter(cfg, log, tokens, adminTokens, httpapi.Handlers{
 		User:     userHandler,
 		Property: propertyHandler,
 		Building: buildingHandler,
 		Contact:  contactHandler,
+		Admin:    adminHandler,
 	})
 
 	srv := &http.Server{

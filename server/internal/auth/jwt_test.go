@@ -27,6 +27,18 @@ func TestIssueAndParse(t *testing.T) {
 	}
 }
 
+func TestIssuerSeparation(t *testing.T) {
+	userManager, _ := NewManager(strings.Repeat("u", 32), time.Minute)
+	adminManager, _ := NewManagerWithIssuer(strings.Repeat("a", 32), time.Minute, "housing-admin")
+	adminToken, _, err := adminManager.Issue(7, "admin-uuid", "super_admin")
+	if err != nil {
+		t.Fatalf("Issue admin: %v", err)
+	}
+	if _, err := userManager.Parse(adminToken); err == nil {
+		t.Fatal("user manager accepted admin token")
+	}
+}
+
 func TestRejectWrongIssuerOrSecret(t *testing.T) {
 	m, _ := NewManager(strings.Repeat("a", 32), time.Minute)
 	token, _, _ := m.Issue(1, "uuid", "landlord")

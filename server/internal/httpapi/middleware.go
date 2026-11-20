@@ -94,6 +94,43 @@ func RequireAuth(mgr *auth.Manager) gin.HandlerFunc {
 	}
 }
 
+func RequireAdmin(mgr *auth.Manager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw := strings.TrimSpace(c.GetHeader("Authorization"))
+		if !strings.HasPrefix(raw, "Bearer ") {
+			httpx.Fail(c, http.StatusUnauthorized, httpx.CodeAdminUnauthorized, "请先登录管理站")
+			return
+		}
+		claims, err := mgr.Parse(strings.TrimSpace(strings.TrimPrefix(raw, "Bearer ")))
+		if err != nil {
+			httpx.Fail(c, http.StatusUnauthorized, httpx.CodeAdminUnauthorized, "管理登录已过期")
+			return
+		}
+		adminID, err := strconv.ParseInt(claims.Subject, 10, 64)
+		if err != nil || adminID <= 0 {
+			httpx.Fail(c, http.StatusUnauthorized, httpx.CodeAdminUnauthorized, "管理登录态无效")
+			return
+		}
+		httpx.SetAdmin(c, adminID, claims.UserUUID, claims.Role)
+		c.Next()
+	}
+}
+
+func RequireAdminRole(roles ...string) gin.HandlerFunc {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		allowed[role] = struct{}{}
+	}
+	return func(c *gin.Context) {
+		role := httpx.CurrentAdminRole(c)
+		if _, ok := allowed[role]; !ok {
+			httpx.Fail(c, http.StatusForbidden, httpx.CodeAdminForbidden, "没有该操作权限")
+			return
+		}
+		c.Next()
+	}
+}
+
 func newTraceID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

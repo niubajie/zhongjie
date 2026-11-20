@@ -8,7 +8,7 @@ services:
       POSTGRES_DB: housing
       TZ: Asia/Shanghai
     ports:
-      - "55432:5432"
+      - "56000:5432"
     volumes:
       - housing_pgdata:/var/lib/postgresql
     healthcheck:

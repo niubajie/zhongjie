@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"housing/internal/admin"
 	"housing/internal/config"
 	"housing/internal/db"
 	"housing/internal/secure"
@@ -18,7 +19,7 @@ import (
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://housing:housing@localhost:55432/housing?sslmode=disable"
+		dsn = "postgres://housing:housing@localhost:56000/housing?sslmode=disable"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -75,6 +76,27 @@ func main() {
 		ON CONFLICT (user_id) DO NOTHING
 	`, landlordID); err != nil {
 		log.Fatal(err)
+	}
+
+	adminPassword := os.Getenv("ADMIN_SEED_PASSWORD")
+	if adminPassword == "" {
+		adminPassword = "Admin123!"
+	}
+	adminHash, err := admin.HashPassword(adminPassword)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO admin_users (username, password_hash, role, status)
+		SELECT 'admin', $1, 'super_admin', 'active'
+		WHERE NOT EXISTS (
+			SELECT 1 FROM admin_users WHERE username = 'admin' AND deleted_at IS NULL
+		)
+	`, adminHash); err != nil {
+		log.Fatal(err)
+	}
+	if cfg.Env != "prod" {
+		log.Printf("dev admin: admin / %s (change ADMIN_SEED_PASSWORD for non-local use)", adminPassword)
 	}
 
 	buildings := []struct {

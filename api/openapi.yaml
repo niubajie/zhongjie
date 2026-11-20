@@ -10,6 +10,7 @@ tags:
   - name: auth
   - name: user
   - name: property
+  - name: admin
 paths:
   /healthz:
     get:
@@ -222,6 +223,105 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/admin/auth/login:
+    post:
+      tags: [admin]
+      summary: 管理站登录
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                totpCode:
+                  type: string
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminLoginEnvelope"
+        "401":
+          description: 用户名/密码错误或需要 TOTP
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/admin/me:
+    get:
+      tags: [admin]
+      summary: 当前管理员
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 当前管理员
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserEnvelope"
+  /v1/admin/stats:
+    get:
+      tags: [admin]
+      summary: 管理站统计
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 统计
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStatsEnvelope"
+  /v1/admin/properties:
+    get:
+      tags: [admin]
+      summary: 管理站房源列表
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: 房源列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/AdminProperty"
   /v1/contact-requests:
     post:
       tags: [property]
@@ -408,6 +508,81 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/CreatedProperty"
+    AdminUser:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        username:
+          type: string
+        role:
+          type: string
+          enum: [super_admin, operations, reviewer, support, auditor]
+    AdminLoginResult:
+      type: object
+      properties:
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        admin:
+          $ref: "#/components/schemas/AdminUser"
+    AdminLoginEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminLoginResult"
+    AdminUserEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminUser"
+    AdminStats:
+      type: object
+      properties:
+        activeProperties:
+          type: integer
+        pendingProperties:
+          type: integer
+        users:
+          type: integer
+        landlords:
+          type: integer
+        contactRequests:
+          type: integer
+    AdminStatsEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminStats"
+    AdminProperty:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+        districtName:
+          type: string
+        streetName:
+          type: string
+        areaSqm:
+          type: number
+        rentCents:
+          type: integer
+        createdAt:
+          type: string
     ContactRequestInput:
       type: object
       required: [propertyUuid, consent]

@@ -19,6 +19,8 @@ type Config struct {
 	RedisURL           string
 	JWTSecret          string
 	JWTAccessTTL       time.Duration
+	AdminJWTSecret     string
+	AdminJWTAccessTTL  time.Duration
 	WeChatAppID        string
 	WeChatSecret       string
 	PIIEncKey          string
@@ -38,9 +40,10 @@ func Load() (Config, error) {
 	cfg := Config{
 		Env:                env,
 		HTTPAddr:           getenv("HTTP_ADDR", ":8080"),
-		DatabaseURL:        getenv("DATABASE_URL", "postgres://housing:housing@localhost:55432/housing?sslmode=disable"),
+		DatabaseURL:        getenv("DATABASE_URL", "postgres://housing:housing@localhost:56000/housing?sslmode=disable"),
 		RedisURL:           getenv("REDIS_URL", "redis://localhost:56379/0"),
 		JWTSecret:          os.Getenv("JWT_SECRET"),
+		AdminJWTSecret:     os.Getenv("ADMIN_JWT_SECRET"),
 		WeChatAppID:        os.Getenv("WECHAT_APPID"),
 		WeChatSecret:       os.Getenv("WECHAT_SECRET"),
 		PIIEncKey:          os.Getenv("PII_ENC_KEY"),
@@ -55,6 +58,12 @@ func Load() (Config, error) {
 	}
 	cfg.JWTAccessTTL = ttl
 
+	adminTTL, err := time.ParseDuration(getenv("ADMIN_JWT_ACCESS_TTL", "8h"))
+	if err != nil {
+		return Config{}, fmt.Errorf("ADMIN_JWT_ACCESS_TTL: %w", err)
+	}
+	cfg.AdminJWTAccessTTL = adminTTL
+
 	devLogin, err := strconv.ParseBool(getenv("DEV_LOGIN_ENABLED", boolString(env == "dev")))
 	if err != nil {
 		return Config{}, fmt.Errorf("DEV_LOGIN_ENABLED: %w", err)
@@ -64,6 +73,9 @@ func Load() (Config, error) {
 	if env == "prod" {
 		if len(cfg.JWTSecret) < 32 {
 			return Config{}, errors.New("JWT_SECRET must be at least 32 chars in prod")
+		}
+		if len(cfg.AdminJWTSecret) < 32 {
+			return Config{}, errors.New("ADMIN_JWT_SECRET must be at least 32 chars in prod")
 		}
 		if cfg.WeChatAppID == "" || cfg.WeChatSecret == "" {
 			return Config{}, errors.New("WECHAT_APPID and WECHAT_SECRET are required in prod")
@@ -78,6 +90,9 @@ func Load() (Config, error) {
 
 	if cfg.JWTSecret == "" {
 		cfg.JWTSecret = "dev-only-jwt-secret-change-before-prod-123456"
+	}
+	if cfg.AdminJWTSecret == "" {
+		cfg.AdminJWTSecret = "dev-only-admin-jwt-secret-change-before-prod-123"
 	}
 	if cfg.PIIEncKey == "" {
 		// base64 of "0123456789abcdef0123456789abcdef" (32 bytes)

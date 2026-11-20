@@ -18,6 +18,10 @@ const (
 	CodePropertyNotFound  = 70001
 	CodePropertyOffline   = 70002
 	CodeMapBoundsInvalid  = 70003
+	CodeAdminUnauthorized = 90001
+	CodeAdminCredentials  = 90002
+	CodeAdminTOTPRequired = 90003
+	CodeAdminForbidden    = 90004
 )
 
 const TraceIDKey = "traceId"

@@ -11,7 +11,7 @@
 - 楼宇联想 + 房东发布房源 API（命中工业园区/写字楼才直接上架）
 - 联系房东 API：确认后返回明文手机号/微信号（已授权时），写审计、7 天/每日限流
 - 微信原生小程序地图首屏、登录/资料页、房源详情弹层、房东发布页、点击拨打
-- React 管理站只读骨架（管理鉴权未接，不能公网部署）
+- React 管理站：独立管理员 JWT、RBAC 角色、登录审计、真实统计与房源列表（只读）
 
 ## 目录
 
@@ -20,7 +20,7 @@
 ├── api/openapi.yaml          M1 API 契约
 ├── server/                   Go API + 迁移 + 种子
 ├── miniprogram/              微信原生小程序（TypeScript）
-├── admin-web/                React + Vite 管理站骨架
+├── admin-web/                React + Vite 管理站
 ├── docker-compose.yml        本地 PostgreSQL 18 + Redis
 └── 技术方案-v1.3.md          方案定稿
 ```
@@ -36,7 +36,7 @@ docker compose -p housing up -d postgres redis
 
 端口刻意避开常见的 5432/6379：
 
-- PostgreSQL：`localhost:55432`，库/用户/密码都是 `housing`
+- PostgreSQL：`localhost:56000`，库/用户/密码都是 `housing`
 - Redis：`localhost:56379`
 
 ### 2. 后端
@@ -130,7 +130,24 @@ npm run dev
 
 打开 `http://127.0.0.1:5173`。
 
-当前管理站是**只读预览骨架**：没有管理端鉴权，不能部署公网。M2 会补 TOTP、RBAC、HttpOnly 会话和审计，再开放写操作。
+开发种子管理员：
+
+```text
+用户名：admin
+密码：Admin123!
+```
+
+`cmd/seed` 只在非 `prod` 环境打印密码；生产用 `ADMIN_SEED_PASSWORD` 或管理端初始化流程。
+
+当前管理站已接入：
+
+- 独立管理员 JWT（issuer `housing-admin`，与租客 token 不通用）
+- 角色字段与 `RequireAdmin` 中间件
+- 登录成功写 `audit_logs`
+- 真实统计 / 房源列表（只读）
+- token 只放内存，刷新页面需重新登录
+
+尚未接入：TOTP 绑定/强制校验、写操作、HttpOnly 刷新会话。部署公网前必须补齐。
 
 ## 环境变量
 
@@ -140,7 +157,9 @@ npm run dev
 |---|---|
 | `APP_ENV` | `dev` / `test` / `prod` |
 | `DATABASE_URL` | PostgreSQL DSN |
-| `JWT_SECRET` | ≥32 字符 |
+| `JWT_SECRET` | 租客端 JWT，≥32 字符 |
+| `ADMIN_JWT_SECRET` | 管理站 JWT，必须与租客端不同，≥32 字符 |
+| `ADMIN_JWT_ACCESS_TTL` | 管理站 token 有效期，默认 `8h` |
 | `WECHAT_APPID` / `WECHAT_SECRET` | 微信小程序凭证 |
 | `PII_ENC_KEY` | base64 编码的 32 字节 AES-GCM key |
 | `PII_HASH_KEY` | 手机号 HMAC key |
@@ -168,5 +187,6 @@ npm run build
 - 后端当前用 `lat/lng` 范围查询，PostGIS 空间函数尚未接入（迁移可后续新增）。
 - 图片只返回 `objectKey`，COS 签名 URL 尚未接入；小程序用占位图。
 - 服务通知尚未接入：联系请求会落库并返回明文联系方式，但 `notificationStatus=not_configured`，房东还收不到微信服务通知。
-- 管理站鉴权、文档/截图导入、小亿语音/解说尚未实现。
+- 管理站 TOTP、写操作与 HttpOnly 刷新会话尚未实现；当前 token 在内存，刷新即退出。
+- 文档/截图导入、小亿语音/解说尚未实现。
 - 地图“3D/俯视”和微信订阅消息需要真机/真实小程序账号联调。

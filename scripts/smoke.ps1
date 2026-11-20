@@ -30,4 +30,12 @@ $uuid = $detailMap.data.items[0].uuid
 $detail = Invoke-RestMethod -Uri "$ApiBase/v1/properties/$uuid"
 Write-Host "  $($detail.data.title) / $($detail.data.areaSqm)sqm / $($detail.data.rentCents)cents"
 
+Write-Host "admin login..."
+$adminLogin = Invoke-RestMethod -Method Post -Uri "$ApiBase/v1/admin/auth/login" `
+  -ContentType "application/json" -Body '{"username":"admin","password":"Admin123!"}'
+if ($adminLogin.code -ne 0) { throw "admin login failed" }
+$adminHeaders = @{ Authorization = "Bearer $($adminLogin.data.token)" }
+$adminStats = Invoke-RestMethod -Uri "$ApiBase/v1/admin/stats" -Headers $adminHeaders
+Write-Host "  admin=$($adminLogin.data.admin.username) active=$($adminStats.data.activeProperties) users=$($adminStats.data.users)"
+
 Write-Host "smoke OK"

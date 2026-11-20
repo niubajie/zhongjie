@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"housing/internal/admin"
 	"housing/internal/auth"
 	"housing/internal/building"
 	"housing/internal/config"
@@ -20,9 +21,10 @@ type Handlers struct {
 	Property *property.Handler
 	Building *building.Handler
 	Contact  *contact.Handler
+	Admin    *admin.Handler
 }
 
-func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, handlers Handlers) *gin.Engine {
+func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr *auth.Manager, handlers Handlers) *gin.Engine {
 	if cfg.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -38,6 +40,12 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, handlers 
 	handlers.Property.Register(v1)
 	if handlers.Building != nil {
 		handlers.Building.Register(v1)
+	}
+	if handlers.Admin != nil {
+		handlers.Admin.RegisterPublic(v1)
+		adminGroup := v1.Group("/admin")
+		adminGroup.Use(RequireAdmin(adminMgr))
+		handlers.Admin.RegisterAuth(adminGroup)
 	}
 
 	protected := v1.Group("")

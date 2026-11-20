@@ -17,16 +17,24 @@ type Claims struct {
 type Manager struct {
 	secret []byte
 	ttl    time.Duration
+	issuer string
 }
 
 func NewManager(secret string, ttl time.Duration) (*Manager, error) {
+	return NewManagerWithIssuer(secret, ttl, "housing")
+}
+
+func NewManagerWithIssuer(secret string, ttl time.Duration, issuer string) (*Manager, error) {
 	if len(secret) < 16 {
 		return nil, errors.New("jwt secret too short")
 	}
 	if ttl <= 0 {
 		return nil, errors.New("jwt ttl must be positive")
 	}
-	return &Manager{secret: []byte(secret), ttl: ttl}, nil
+	if issuer == "" {
+		return nil, errors.New("jwt issuer is required")
+	}
+	return &Manager{secret: []byte(secret), ttl: ttl, issuer: issuer}, nil
 }
 
 func (m *Manager) Issue(userID int64, userUUID, role string) (string, time.Time, error) {
@@ -39,7 +47,7 @@ func (m *Manager) Issue(userID int64, userUUID, role string) (string, time.Time,
 			Subject:   fmt.Sprintf("%d", userID),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(exp),
-			Issuer:    "housing",
+			Issuer:    m.issuer,
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -57,7 +65,7 @@ func (m *Manager) Parse(raw string) (Claims, error) {
 			return nil, fmt.Errorf("unexpected signing method %s", t.Method.Alg())
 		}
 		return m.secret, nil
-	}, jwt.WithIssuer("housing"), jwt.WithExpirationRequired())
+	}, jwt.WithIssuer(m.issuer), jwt.WithExpirationRequired())
 	if err != nil {
 		return Claims{}, err
 	}
