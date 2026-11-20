@@ -15,6 +15,7 @@ import (
 	"housing/internal/freshness"
 	"housing/internal/httpx"
 	"housing/internal/importjob"
+	"housing/internal/intake"
 	"housing/internal/property"
 	"housing/internal/user"
 )
@@ -27,6 +28,7 @@ type Handlers struct {
 	Freshness *freshness.Handler
 	Assistant *assistant.Handler
 	Import    *importjob.Handler
+	Intake    *intake.Handler
 	Admin     *admin.Handler
 }
 
@@ -57,6 +59,9 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr 
 		handlers.Admin.RegisterAuth(adminGroup)
 		if handlers.Freshness != nil {
 			handlers.Freshness.RegisterAdmin(adminGroup)
+		}
+		if handlers.Intake != nil {
+			handlers.Intake.RegisterAdmin(adminGroup)
 		}
 	}
 

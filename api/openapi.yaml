@@ -596,6 +596,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+  /v1/admin/rentals/intake/text:
+    post:
+      tags: [admin]
+      summary: 管理站文字录入并自动匹配房东
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, landlordPhone]
+              properties:
+                text: {type: string}
+                landlordPhone: {type: string}
+      responses:
+        "201":
+          description: 创建结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data: {type: object}
+        "400":
+          description: 房东/楼宇/字段不匹配
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/freshness/run:
     post:
       tags: [admin]

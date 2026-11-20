@@ -15,6 +15,11 @@
   gap: 16rpx;
 }
 
+.head-actions {
+  display: flex;
+  gap: 8rpx;
+}
+
 .settings-link {
   padding: 8rpx 14rpx;
   border-radius: 999rpx;

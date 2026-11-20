@@ -2,7 +2,10 @@
   <view class="head">
     <view class="head-row">
       <text class="title">发布房源</text>
-      <button class="settings-link" bindtap="onSettings">联系方式设置</button>
+      <view class="head-actions">
+        <button class="settings-link" bindtap="onImport">导入文档</button>
+        <button class="settings-link" bindtap="onSettings">联系方式</button>
+      </view>
     </view>
     <text class="sub">选择工业园区/写字楼，填写面积和月租；命中楼宇后直接上架。</text>
   </view>

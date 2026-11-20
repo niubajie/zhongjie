@@ -21,6 +21,7 @@ import (
 	"housing/internal/freshness"
 	"housing/internal/httpapi"
 	"housing/internal/importjob"
+	"housing/internal/intake"
 	"housing/internal/property"
 	"housing/internal/secure"
 	"housing/internal/user"
@@ -95,6 +96,10 @@ func main() {
 	importSvc := importjob.NewService(importRepo, propertySvc, buildingSvc)
 	importHandler := importjob.NewHandler(importSvc)
 
+	intakeRepo := intake.NewRepository(pool)
+	intakeSvc := intake.NewService(intakeRepo, userRepo, buildingSvc, propertySvc, pii)
+	intakeHandler := intake.NewHandler(intakeSvc)
+
 	adminRepo := admin.NewRepository(pool)
 	adminSvc := admin.NewService(adminRepo, pii, adminTokens)
 	adminHandler := admin.NewHandler(adminSvc)
@@ -107,6 +112,7 @@ func main() {
 		Freshness: freshnessHandler,
 		Assistant: assistantHandler,
 		Import:    importHandler,
+		Intake:    intakeHandler,
 		Admin:     adminHandler,
 	})
 

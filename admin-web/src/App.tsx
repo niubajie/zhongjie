@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
+  adminIntakeText,
   adminLogin,
   enableTOTP,
   fetchAdminProperties,
@@ -88,6 +89,10 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   const [totpURL, setTotpURL] = useState('')
   const [totpCode, setTotpCode] = useState('')
   const [totpMessage, setTotpMessage] = useState('')
+  const [intakeText, setIntakeText] = useState('')
+  const [intakePhone, setIntakePhone] = useState('')
+  const [intakeMessage, setIntakeMessage] = useState('')
+  const [intakeLoading, setIntakeLoading] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -124,6 +129,22 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
         )
       })
       .catch((err: Error) => setError(err.message || '操作失败'))
+  }
+
+  function submitIntake() {
+    setIntakeLoading(true)
+    setIntakeMessage('')
+    adminIntakeText(session.token, intakeText, intakePhone.trim())
+      .then((result) => {
+        setIntakeMessage(
+          `已创建 ${result.buildingName || '房源'}，状态 ${result.status}，房源 ${result.propertyId || ''}`,
+        )
+        setIntakeText('')
+        return fetchAdminProperties(session.token)
+      })
+      .then((next) => setProperties(next))
+      .catch((err: Error) => setIntakeMessage(err.message || '录入失败'))
+      .finally(() => setIntakeLoading(false))
   }
 
   function beginTOTP() {
@@ -191,6 +212,30 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
           <Stat label="用户" value={stats?.users ?? '—'} note="租客 + 房东" />
           <Stat label="房东" value={stats?.landlords ?? '—'} note="landlord" />
           <Stat label="联系请求" value={stats?.contactRequests ?? '—'} note="已落库" />
+        </section>
+
+        <section className="panel" id="intake">
+          <h2>管理站租房录入</h2>
+          <p className="muted">粘贴房源文字，填写房东手机号；系统自动解析楼宇/面积/租金并匹配房东。</p>
+          <div className="intake-grid">
+            <textarea
+              value={intakeText}
+              onChange={(e) => setIntakeText(e.target.value)}
+              placeholder={'楼宇：科兴科学园\n面积：110\n租金：20000\n户型：3+1'}
+            />
+            <div className="intake-side">
+              <input
+                value={intakePhone}
+                onChange={(e) => setIntakePhone(e.target.value)}
+                placeholder="房东手机号"
+                inputMode="tel"
+              />
+              <button className="btn primary" onClick={submitIntake} disabled={intakeLoading}>
+                {intakeLoading ? '录入中…' : '解析并创建'}
+              </button>
+              {intakeMessage && <p className="muted">{intakeMessage}</p>}
+            </div>
+          </div>
         </section>
 
         <section className="panel" id="properties">

@@ -1,0 +1,30 @@
+<view class="import-page">
+  <view class="head">
+    <text class="title">Word / Excel 导入</text>
+    <text class="sub">从聊天记录选择 .docx 或 .xlsx；系统自动解析楼宇、面积、租金并创建房源。</text>
+  </view>
+
+  <view class="panel">
+    <button class="ghost-btn" bindtap="onChoose">选择文件</button>
+    <view class="file" wx:if="{{fileName}}">
+      <text class="file-name">{{fileName}}</text>
+      <text class="file-meta">{{fileSize}}</text>
+    </view>
+    <button class="primary-btn upload" bindtap="onUpload" disabled="{{loading || !filePath}}">
+      {{loading ? '导入中…' : '开始导入'}}
+    </button>
+    <text class="hint">只支持 .docx / .xlsx；楼宇必须在楼宇词典中。</text>
+  </view>
+
+  <view class="panel result" wx:if="{{result}}">
+    <text class="result-title">导入完成</text>
+    <view class="result-grid">
+      <view><text class="result-value">{{result.totalRows}}</text><text class="result-label">总行数</text></view>
+      <view><text class="result-value">{{result.successRows}}</text><text class="result-label">成功</text></view>
+      <view><text class="result-value">{{result.errorRows}}</text><text class="result-label">失败</text></view>
+    </view>
+    <text class="hint">失败行可在管理站导入任务中查看。</text>
+  </view>
+
+  <text class="error" wx:if="{{error}}">{{error}}</text>
+</view>

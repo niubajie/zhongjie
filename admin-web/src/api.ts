@@ -78,6 +78,27 @@ export async function fetchAdminStats(token: string): Promise<AdminStats> {
   return request<AdminStats>('/v1/admin/stats', {}, token)
 }
 
+export interface IntakeResult {
+  jobId: string
+  propertyId?: string
+  status: string
+  landlordId?: string
+  buildingName?: string
+  message?: string
+}
+
+export async function adminIntakeText(
+  token: string,
+  text: string,
+  landlordPhone: string,
+): Promise<IntakeResult> {
+  return request<IntakeResult>(
+    '/v1/admin/rentals/intake/text',
+    { method: 'POST', body: JSON.stringify({ text, landlordPhone }) },
+    token,
+  )
+}
+
 export async function moderateProperty(
   token: string,
   uuid: string,

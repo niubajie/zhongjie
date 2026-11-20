@@ -118,6 +118,10 @@ Page<PublishPageData, WechatMiniprogram.Page.CustomOption>({
     wx.navigateTo({ url: '/pages/settings/index' })
   },
 
+  onImport() {
+    wx.navigateTo({ url: '/pages/import/index' })
+  },
+
   onSubmit() {
     if (!this.data.canPublish) {
       return

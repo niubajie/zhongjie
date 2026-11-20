@@ -125,8 +125,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke.ps1
 - 登录 → 手机号 → 姓氏/角色资料流
 - 房东发布页：楼宇联想选择、面积/月租校验、直接上架或转 `pending`
 - 联系方式设置：手机号/微信号是否向确认联系的租客展示
+- 文档导入页：从聊天记录选 `.docx` / `.xlsx` 上传并显示导入结果
 - 小亿页：文字对话收集需求、竖向房源卡、逐段解说、图片/地图/视频场景动作、联系房东
-- 文档导入 API 已通；小程序上传入口待接
 
 ### 4. 管理站
 
@@ -153,6 +153,7 @@ npm run dev
 - 角色字段与 `RequireAdmin` 中间件
 - 登录成功写 `audit_logs`
 - 真实统计 / 房源列表
+- 管理站文字录入：解析楼宇/面积/租金，按房东手机号匹配后创建房源
 - 房源上架/下架审核（写 `audit_logs`）
 - TOTP 绑定、启用、登录校验
 - token 只放内存，刷新页面需重新登录
@@ -199,5 +200,6 @@ npm run build
 - 服务通知已写入 `notification_outbox`，但真实微信订阅消息发送还需要模板 ID/access_token；没有凭证时状态为 `not_configured`。
 - 小亿当前是文字/规则版：没有接真实 ASR/TTS/LLM；音频、口型、Live2D 和真实视频播放器未接。
 - 文档导入支持 `.docx` / `.xlsx` 文本字段；截图 OCR、Word/Excel 图片提取、导入任务管理页未接。
+- 管理站录入目前只接文字；图片/视频录入需要 OCR/ASR 服务，先返回未配置。
 - 管理站 token 在内存，刷新即退出；HttpOnly 刷新会话未接。
 - 地图“3D/俯视”和微信订阅消息需要真机/真实小程序账号联调。

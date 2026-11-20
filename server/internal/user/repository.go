@@ -61,6 +61,22 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (User, error) {
 	return u, nil
 }
 
+func (r *Repository) FindByPhoneHash(ctx context.Context, hash []byte) (User, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT `+userColumns+`
+		FROM users
+		WHERE phone_hash = $1 AND deleted_at IS NULL
+	`, hash)
+	u, err := scanUser(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, ErrNotFound
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("find user by phone hash: %w", err)
+	}
+	return u, nil
+}
+
 func (r *Repository) FindByOpenID(ctx context.Context, openid string) (User, error) {
 	row := r.pool.QueryRow(ctx, `
 		SELECT `+userColumns+`
