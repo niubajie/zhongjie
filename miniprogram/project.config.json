@@ -1,0 +1,24 @@
+{
+  "description": "房屋中介小程序 · 小亿找房",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "coverView": true,
+    "showShadowRootInWxmlPanel": true,
+    "useCompilerPlugins": [
+      "typescript"
+    ]
+  },
+  "compileType": "miniprogram",
+  "libVersion": "3.7.0",
+  "appid": "touristappid",
+  "projectname": "housing-miniprogram",
+  "miniprogramRoot": "./",
+  "condition": {}
+}

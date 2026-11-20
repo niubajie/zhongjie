@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: housing-postgres
+    environment:
+      POSTGRES_USER: housing
+      POSTGRES_PASSWORD: housing
+      POSTGRES_DB: housing
+      TZ: Asia/Shanghai
+    ports:
+      - "55432:5432"
+    volumes:
+      - housing_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U housing -d housing"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: housing-redis
+    ports:
+      - "56379:6379"
+    volumes:
+      - housing_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  housing_pgdata:
+  housing_redisdata:

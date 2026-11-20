@@ -1,0 +1,293 @@
+:root {
+  --bg: #f4f6fb;
+  --surface: #ffffff;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --brand: #2563eb;
+  --brand-soft: #eff6ff;
+  --ok: #16a34a;
+  --danger: #dc2626;
+  font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button,
+a {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+}
+
+.sidebar {
+  width: 240px;
+  flex: 0 0 240px;
+  padding: 24px 18px;
+  background: #0f172a;
+  color: #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: white;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+
+.brand strong {
+  display: block;
+  font-size: 15px;
+}
+
+.brand span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nav a {
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: #cbd5e1;
+  font-size: 14px;
+}
+
+.nav a.active {
+  background: rgba(37, 99, 235, 0.22);
+  color: #fff;
+}
+
+.sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1e293b;
+  color: #bfdbfe;
+}
+
+.workspace {
+  flex: 1;
+  min-width: 0;
+}
+
+.preview-banner {
+  padding: 8px 24px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 12px;
+}
+
+.main {
+  max-width: 1100px;
+  padding: 40px 32px 64px;
+}
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--brand);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: -0.02em;
+}
+
+.lede {
+  max-width: 720px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.health {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.health-ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.health-error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 32px;
+}
+
+.stat {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stat-value {
+  font-size: 30px;
+  letter-spacing: -0.03em;
+}
+
+.stat-note {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.panel {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  margin-top: 16px;
+}
+
+.panel h2 {
+  margin: 0 0 14px;
+  font-size: 17px;
+}
+
+.checklist {
+  margin: 0;
+  padding-left: 18px;
+  color: #334155;
+  line-height: 1.9;
+  font-size: 14px;
+}
+
+.muted-list {
+  color: var(--muted);
+}
+
+.notice {
+  border-color: #bfdbfe;
+  background: var(--brand-soft);
+}
+
+.notice p {
+  margin: 0;
+  color: #1e3a8a;
+  line-height: 1.7;
+  font-size: 14px;
+}
+
+.btn {
+  display: inline-flex;
+  margin-top: 18px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--brand);
+  color: white;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    display: none;
+  }
+
+  .stats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .main {
+    padding: 24px 18px 48px;
+  }
+}

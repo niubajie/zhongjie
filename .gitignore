@@ -1,0 +1,26 @@
+# Go
+server/.gocache/
+server/.gomodcache/
+server/.gotmp/
+server/bin/
+*.exe
+
+# Node
+node_modules/
+dist/
+.npm-cache/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local data
+*.log

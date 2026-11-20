@@ -1,0 +1,91 @@
+package property
+
+import "errors"
+
+var ErrNotFound = errors.New("property not found")
+
+type MapQuery struct {
+	CityCode string
+	SWLat    float64
+	SWLng    float64
+	NELat    float64
+	NELng    float64
+	Zoom     int
+}
+
+type MapCluster struct {
+	ID           string  `json:"id"`
+	DistrictCode string  `json:"districtCode"`
+	DistrictName string  `json:"districtName"`
+	StreetCode   string  `json:"streetCode"`
+	StreetName   string  `json:"streetName"`
+	Lat          float64 `json:"lat"`
+	Lng          float64 `json:"lng"`
+	Count        int64   `json:"count"`
+	Level        string  `json:"level"`
+}
+
+type MapItem struct {
+	UUID         string  `json:"uuid"`
+	DistrictCode string  `json:"districtCode"`
+	DistrictName string  `json:"districtName"`
+	StreetCode   string  `json:"streetCode"`
+	StreetName   string  `json:"streetName"`
+	Lat          float64 `json:"lat"`
+	Lng          float64 `json:"lng"`
+	AreaSqm      float64 `json:"areaSqm"`
+	RentCents    int64   `json:"rentCents"`
+	Layout       string  `json:"layout,omitempty"`
+	Title        string  `json:"title"`
+}
+
+type MapResult struct {
+	CityCode string       `json:"cityCode"`
+	Zoom     int          `json:"zoom"`
+	Clusters []MapCluster `json:"clusters"`
+	Items    []MapItem    `json:"items"`
+}
+
+type Image struct {
+	ObjectKey string `json:"objectKey"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Sort      int    `json:"sort"`
+}
+
+type CreateInput struct {
+	BuildingUUID string   `json:"buildingUuid"`
+	AreaSqm      float64  `json:"areaSqm"`
+	RentCents    int64    `json:"rentCents"`
+	Layout       string   `json:"layout"`
+	Floor        string   `json:"floor"`
+	Orientation  string   `json:"orientation"`
+	Title        string   `json:"title"`
+	Description  string   `json:"description"`
+	ImageKeys    []string `json:"imageKeys"`
+}
+
+type Created struct {
+	UUID          string `json:"uuid"`
+	Status        string `json:"status"`
+	PendingReason string `json:"pendingReason,omitempty"`
+}
+
+type Detail struct {
+	UUID            string  `json:"uuid"`
+	DistrictCode    string  `json:"districtCode"`
+	DistrictName    string  `json:"districtName"`
+	StreetCode      string  `json:"streetCode"`
+	StreetName      string  `json:"streetName"`
+	AreaSqm         float64 `json:"areaSqm"`
+	RentCents       int64   `json:"rentCents"`
+	Layout          string  `json:"layout,omitempty"`
+	Floor           string  `json:"floor,omitempty"`
+	Orientation     string  `json:"orientation,omitempty"`
+	Title           string  `json:"title"`
+	Description     string  `json:"description,omitempty"`
+	BuildingType    string  `json:"buildingType"`
+	PublishedAt     string  `json:"publishedAt,omitempty"`
+	LastConfirmedAt string  `json:"lastConfirmedAt,omitempty"`
+	Images          []Image `json:"images"`
+}

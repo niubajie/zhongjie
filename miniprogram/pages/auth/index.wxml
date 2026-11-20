@@ -1,0 +1,65 @@
+<view class="auth-page">
+  <view class="brand">
+    <view class="brand-avatar">亿</view>
+    <view>
+      <text class="brand-title">小亿找房</text>
+      <text class="brand-sub">登录后即可联系房东、管理房源</text>
+    </view>
+  </view>
+
+  <view class="steps">
+    <view class="step {{step === 'login' ? 'step-active' : ''}}">1 微信登录</view>
+    <view class="step {{step === 'phone' ? 'step-active' : ''}}">2 绑定手机号</view>
+    <view class="step {{step === 'profile' ? 'step-active' : ''}}">3 填写资料</view>
+  </view>
+
+  <view class="panel" wx:if="{{step === 'login'}}">
+    <text class="panel-title">先登录，再找房</text>
+    <text class="panel-sub">登录只获取 openid，手机号需要你单独授权。</text>
+    <button class="primary-btn" bindtap="onLogin" disabled="{{loading}}">
+      {{loading ? '登录中…' : '微信登录'}}
+    </button>
+  </view>
+
+  <view class="panel" wx:if="{{step === 'phone'}}">
+    <text class="panel-title">绑定手机号</text>
+    <text class="panel-sub">房东需要手机号接收联系提醒；租客需要手机号让房东确认身份。</text>
+    <button class="primary-btn" open-type="getPhoneNumber" bindgetphonenumber="onGetPhone" disabled="{{loading}}">
+      微信授权手机号
+    </button>
+    <button class="ghost-btn dev-btn" wx:if="{{isDev}}" bindtap="onDevPhone" disabled="{{loading}}">
+      开发态：使用 13800138000
+    </button>
+  </view>
+
+  <view class="panel" wx:if="{{step === 'profile'}}">
+    <text class="panel-title">最后一步</text>
+    <text class="panel-sub">填写姓氏和身份，方便房东知道是谁在联系。</text>
+
+    <view class="field">
+      <text class="field-label">姓氏</text>
+      <input class="field-input" value="{{surname}}" maxlength="10" placeholder="例如：张" bindinput="onSurnameInput" />
+    </view>
+
+    <view class="field">
+      <text class="field-label">身份</text>
+      <radio-group class="role-group" bindchange="onRoleChange">
+        <label class="role {{role === 'tenant' ? 'role-active' : ''}}">
+          <radio value="tenant" checked="{{role === 'tenant'}}" color="#2563eb" />
+          <text>租赁方（租客）</text>
+        </label>
+        <label class="role {{role === 'landlord' ? 'role-active' : ''}}">
+          <radio value="landlord" checked="{{role === 'landlord'}}" color="#2563eb" />
+          <text>房东</text>
+        </label>
+      </radio-group>
+    </view>
+
+    <button class="primary-btn" bindtap="onSubmitProfile" disabled="{{loading}}">
+      {{loading ? '保存中…' : '完成'}}
+    </button>
+  </view>
+
+  <text class="message" wx:if="{{message}}">{{message}}</text>
+  <text class="privacy">继续即表示同意《隐私政策》和《用户协议》。手机号仅用于租房联系。</text>
+</view>

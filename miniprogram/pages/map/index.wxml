@@ -1,0 +1,104 @@
+<view class="map-page">
+  <map
+    id="housingMap"
+    class="map"
+    longitude="{{longitude}}"
+    latitude="{{latitude}}"
+    scale="{{scale}}"
+    markers="{{markers}}"
+    show-location
+    min-scale="3"
+    max-scale="16"
+    enable-3D="{{false}}"
+    enable-overlooking="{{false}}"
+    enable-rotate="{{false}}"
+    bindmarkertap="onMarkerTap"
+    bindregionchange="onRegionChange"
+  />
+
+  <view class="topbar">
+    <view class="city">
+      <text class="city-name">{{cityName}}</text>
+      <text class="city-sub">在租房源 {{totalCount}} 套</text>
+    </view>
+    <view class="top-actions">
+      <button class="publish-link" bindtap="onPublishTap">发布</button>
+      <button class="auth-link" bindtap="onAuthTap">{{hasToken ? '我的' : '登录'}}</button>
+    </view>
+  </view>
+
+  <button class="voice-fab" bindtap="onRobotStart">
+    <text class="voice-icon">🎙</text>
+    <text class="voice-label">问小亿</text>
+  </button>
+
+  <view class="hint" wx:if="{{!loading && !error}}">拖动地图查看屏幕内房源，点击标记查看详情</view>
+
+  <view class="state" wx:if="{{loading}}">正在加载房源…</view>
+  <view class="state state-error" wx:if="{{error}}">
+    <text>{{error}}</text>
+    <button class="retry" bindtap="onRetry">重试</button>
+  </view>
+
+  <view class="robot-layer" wx:if="{{showRobot}}">
+    <view class="robot-avatar">
+      <view class="robot-face">
+        <view class="eye eye-left"></view>
+        <view class="eye eye-right"></view>
+        <view class="mouth"></view>
+      </view>
+      <view class="robot-badge">亿</view>
+    </view>
+    <view class="robot-bubble">
+      <text class="robot-title">小亿</text>
+      <text class="robot-text">{{robotText}}</text>
+      <view class="robot-actions">
+        <button class="robot-primary" bindtap="onRobotStart">开始找房</button>
+        <button class="robot-ghost" bindtap="onRobotClose">先逛逛</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="sheet-mask" wx:if="{{showDetail}}" bindtap="closeDetail"></view>
+  <view class="sheet" wx:if="{{showDetail && detail}}">
+    <view class="sheet-handle"></view>
+    <view class="sheet-head">
+      <view>
+        <text class="sheet-title">{{detail.title}}</text>
+        <text class="sheet-loc">{{detail.districtName || detail.districtCode}} · {{detail.streetName || detail.streetCode}}（仅展示区/街道）</text>
+      </view>
+      <button class="sheet-close" bindtap="closeDetail">×</button>
+    </view>
+
+    <view class="gallery">
+      <view class="gallery-cover">
+        <text class="gallery-count">共 {{imageCount}} 张图片</text>
+        <text class="gallery-placeholder">房源实景图</text>
+      </view>
+    </view>
+
+    <view class="metrics">
+      <view class="metric">
+        <text class="metric-value">{{detail.areaSqm}}㎡</text>
+        <text class="metric-label">面积</text>
+      </view>
+      <view class="metric">
+        <text class="metric-value">{{rentYuan}}</text>
+        <text class="metric-label">月租</text>
+      </view>
+      <view class="metric" wx:if="{{detail.layout}}">
+        <text class="metric-value">{{detail.layout}}</text>
+        <text class="metric-label">户型</text>
+      </view>
+      <view class="metric" wx:if="{{detail.floor}}">
+        <text class="metric-value">{{detail.floor}}</text>
+        <text class="metric-label">楼层</text>
+      </view>
+    </view>
+
+    <view class="desc" wx:if="{{detail.description}}">{{detail.description}}</view>
+
+    <button class="primary-btn contact" bindtap="onContact">联系房东</button>
+    <text class="privacy-note">确认联系后才会展示房东联系方式</text>
+  </view>
+</view>

@@ -1,0 +1,510 @@
+openapi: 3.1.0
+info:
+  title: 房屋中介小程序 API
+  version: 0.1.0
+  description: M1 最小契约：微信登录、资料、地图聚合、房源详情。
+servers:
+  - url: http://localhost:8080
+    description: local
+tags:
+  - name: auth
+  - name: user
+  - name: property
+paths:
+  /healthz:
+    get:
+      summary: 健康检查
+      security: []
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  /v1/auth/wechat/login:
+    post:
+      tags: [auth]
+      summary: 微信登录（开发态可用 devOpenid）
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                devOpenid:
+                  type: string
+                  description: 仅 APP_ENV=dev 且 DEV_LOGIN_ENABLED=true 时生效；code 与 devOpenid 至少一个
+      responses:
+        "200":
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthEnvelope"
+  /v1/auth/wechat/phone:
+    post:
+      tags: [auth]
+      summary: 手机号授权 code 换手机号并绑定
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                devPhone:
+                  type: string
+                  description: 仅开发态生效
+      responses:
+        "200":
+          description: 绑定成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserEnvelope"
+  /v1/me:
+    get:
+      tags: [user]
+      summary: 当前用户
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 当前用户
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserEnvelope"
+  /v1/profile:
+    post:
+      tags: [user]
+      summary: 填写姓氏与角色
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                surname:
+                  type: string
+                  minLength: 1
+                  maxLength: 10
+                role:
+                  type: string
+                  enum: [landlord, tenant]
+              required: [surname, role]
+      responses:
+        "200":
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserEnvelope"
+  /v1/properties/map:
+    get:
+      tags: [property]
+      summary: 地图聚合/点位
+      security: []
+      parameters:
+        - name: cityCode
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "440300"
+        - name: swLat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: swLng
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: neLat
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: neLng
+          in: query
+          required: true
+          schema:
+            type: number
+        - name: zoom
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 20
+            default: 13
+      responses:
+        "200":
+          description: 地图结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MapEnvelope"
+  /v1/buildings/suggest:
+    get:
+      tags: [property]
+      summary: 工业园区/写字楼联想
+      security: []
+      parameters:
+        - name: cityCode
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 候选楼宇
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: integer
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/BuildingSuggest"
+  /v1/landlord/properties:
+    post:
+      tags: [property]
+      summary: 房东发布房源（M2）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePropertyInput"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedPropertyEnvelope"
+        "403":
+          description: 非房东
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/properties/{uuid}:
+    get:
+      tags: [property]
+      summary: 房源公开详情
+      security: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 房源详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailEnvelope"
+        "404":
+          description: 不存在或已下架
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        traceId:
+          type: string
+    ErrorEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              type: object
+    PublicUser:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        phoneMask:
+          type: string
+        surname:
+          type: string
+        role:
+          type: string
+          enum: [landlord, tenant, ""]
+        status:
+          type: string
+        profileCompleted:
+          type: boolean
+    AuthData:
+      type: object
+      properties:
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        profileCompleted:
+          type: boolean
+        user:
+          $ref: "#/components/schemas/PublicUser"
+    AuthEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AuthData"
+    UserEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/PublicUser"
+    BuildingSuggest:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        name:
+          type: string
+        districtCode:
+          type: string
+        districtName:
+          type: string
+        streetCode:
+          type: string
+        streetName:
+          type: string
+        buildingType:
+          type: string
+          enum: [industrial_park, office_building]
+        lat:
+          type: number
+        lng:
+          type: number
+    CreatePropertyInput:
+      type: object
+      required: [buildingUuid, areaSqm, rentCents]
+      properties:
+        buildingUuid:
+          type: string
+          format: uuid
+        areaSqm:
+          type: number
+          minimum: 5
+          maximum: 1000
+        rentCents:
+          type: integer
+          minimum: 10000
+          maximum: 100000000
+        layout:
+          type: string
+        floor:
+          type: string
+        orientation:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        imageKeys:
+          type: array
+          items:
+            type: string
+    CreatedProperty:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, pending, draft]
+        pendingReason:
+          type: string
+    CreatedPropertyEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/CreatedProperty"
+    MapCluster:
+      type: object
+      properties:
+        id:
+          type: string
+        districtCode:
+          type: string
+        districtName:
+          type: string
+        streetCode:
+          type: string
+        streetName:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        count:
+          type: integer
+        level:
+          type: string
+    MapItem:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        districtCode:
+          type: string
+        districtName:
+          type: string
+        streetCode:
+          type: string
+        streetName:
+          type: string
+        lat:
+          type: number
+        lng:
+          type: number
+        areaSqm:
+          type: number
+        rentCents:
+          type: integer
+        layout:
+          type: string
+        title:
+          type: string
+    MapData:
+      type: object
+      properties:
+        cityCode:
+          type: string
+        zoom:
+          type: integer
+        clusters:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapCluster"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapItem"
+    MapEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/MapData"
+    PropertyImage:
+      type: object
+      properties:
+        objectKey:
+          type: string
+        width:
+          type: integer
+        height:
+          type: integer
+        sort:
+          type: integer
+    PropertyDetail:
+      type: object
+      properties:
+        uuid:
+          type: string
+          format: uuid
+        districtCode:
+          type: string
+        districtName:
+          type: string
+        streetCode:
+          type: string
+        streetName:
+          type: string
+        areaSqm:
+          type: number
+        rentCents:
+          type: integer
+        layout:
+          type: string
+        floor:
+          type: string
+        orientation:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        buildingType:
+          type: string
+        publishedAt:
+          type: string
+        lastConfirmedAt:
+          type: string
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/PropertyImage"
+    DetailEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/PropertyDetail"
