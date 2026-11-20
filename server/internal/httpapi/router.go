@@ -9,6 +9,7 @@ import (
 	"housing/internal/auth"
 	"housing/internal/building"
 	"housing/internal/config"
+	"housing/internal/contact"
 	"housing/internal/httpx"
 	"housing/internal/property"
 	"housing/internal/user"
@@ -18,6 +19,7 @@ type Handlers struct {
 	User     *user.Handler
 	Property *property.Handler
 	Building *building.Handler
+	Contact  *contact.Handler
 }
 
 func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, handlers Handlers) *gin.Engine {
@@ -42,6 +44,9 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, handlers 
 	protected.Use(RequireAuth(mgr))
 	handlers.User.RegisterAuth(protected)
 	handlers.Property.RegisterAuth(protected)
+	if handlers.Contact != nil {
+		handlers.Contact.RegisterAuth(protected)
+	}
 
 	r.NoRoute(func(c *gin.Context) {
 		httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, "接口不存在")

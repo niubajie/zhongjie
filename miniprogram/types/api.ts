@@ -91,6 +91,15 @@ export interface CreatedProperty {
   pendingReason?: string
 }
 
+export interface ContactReveal {
+  requestUuid: string
+  phone?: string
+  wechatId?: string
+  contactAvailable: boolean
+  notificationStatus: string
+  message?: string
+}
+
 export interface PropertyDetail {
   uuid: string
   districtCode: string

@@ -98,7 +98,9 @@
 
     <view class="desc" wx:if="{{detail.description}}">{{detail.description}}</view>
 
-    <button class="primary-btn contact" bindtap="onContact">联系房东</button>
+    <button class="primary-btn contact" bindtap="onContact" disabled="{{contactLoading}}">
+      {{contactLoading ? '提交中…' : '联系房东'}}
+    </button>
     <text class="privacy-note">确认联系后才会展示房东联系方式</text>
   </view>
 </view>

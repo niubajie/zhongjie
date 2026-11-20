@@ -1,6 +1,7 @@
 import type {
   AuthResult,
   BuildingSuggest,
+  ContactReveal,
   CreatedProperty,
   CreatePropertyInput,
   MapData,
@@ -74,5 +75,16 @@ export function createProperty(input: CreatePropertyInput): Promise<CreatedPrope
   return request<CreatedProperty>('/v1/landlord/properties', {
     method: 'POST',
     data: input,
+  })
+}
+
+export function createContactRequest(
+  propertyUuid: string,
+  consent: boolean,
+  note = '',
+): Promise<ContactReveal> {
+  return request<ContactReveal>('/v1/contact-requests', {
+    method: 'POST',
+    data: { propertyUuid, consent, note },
   })
 }

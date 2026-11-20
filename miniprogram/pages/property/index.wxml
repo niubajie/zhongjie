@@ -38,7 +38,9 @@
       <text class="section-body">为保护房东隐私，公开页面只展示区和街道；具体位置在联系确认后由房东告知。</text>
     </view>
 
-    <button class="primary-btn contact" bindtap="onContact">联系房东</button>
+    <button class="primary-btn contact" bindtap="onContact" disabled="{{contactLoading}}">
+      {{contactLoading ? '提交中…' : '联系房东'}}
+    </button>
   </view>
 
   <view class="state" wx:if="{{loading}}">加载中…</view>

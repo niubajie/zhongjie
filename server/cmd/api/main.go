@@ -14,6 +14,7 @@ import (
 	"housing/internal/auth"
 	"housing/internal/building"
 	"housing/internal/config"
+	"housing/internal/contact"
 	"housing/internal/db"
 	"housing/internal/httpapi"
 	"housing/internal/property"
@@ -69,10 +70,15 @@ func main() {
 	propertySvc := property.NewService(propertyRepo, buildingSvc, userRepo)
 	propertyHandler := property.NewHandler(propertySvc)
 
+	contactRepo := contact.NewRepository(pool)
+	contactSvc := contact.NewService(contactRepo, pii)
+	contactHandler := contact.NewHandler(contactSvc)
+
 	router := httpapi.NewRouter(cfg, log, tokens, httpapi.Handlers{
 		User:     userHandler,
 		Property: propertyHandler,
 		Building: buildingHandler,
+		Contact:  contactHandler,
 	})
 
 	srv := &http.Server{

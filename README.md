@@ -9,7 +9,8 @@
 - 开发态微信登录、JWT、手机号加密、姓氏/角色资料
 - 地图聚合 / 房源详情 API
 - 楼宇联想 + 房东发布房源 API（命中工业园区/写字楼才直接上架）
-- 微信原生小程序地图首屏、登录/资料页、房源详情弹层、房东发布页
+- 联系房东 API：确认后返回明文手机号/微信号（已授权时），写审计、7 天/每日限流
+- 微信原生小程序地图首屏、登录/资料页、房源详情弹层、房东发布页、点击拨打
 - React 管理站只读骨架（管理鉴权未接，不能公网部署）
 
 ## 目录
@@ -86,6 +87,15 @@ curl -s -X POST http://127.0.0.1:8080/v1/landlord/properties \
   -d '{"buildingUuid":"<楼宇uuid>","areaSqm":120,"rentCents":1680000,"layout":"3+1"}'
 ```
 
+联系房东（租客需已绑定手机号）：
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v1/contact-requests \
+  -H "Authorization: Bearer <tenant-token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"propertyUuid":"<房源uuid>","consent":true,"note":"想周末看房"}'
+```
+
 快速回归：
 
 ```bash
@@ -157,5 +167,6 @@ npm run build
 
 - 后端当前用 `lat/lng` 范围查询，PostGIS 空间函数尚未接入（迁移可后续新增）。
 - 图片只返回 `objectKey`，COS 签名 URL 尚未接入；小程序用占位图。
-- 联系房东、服务通知、管理站鉴权、文档/截图导入、小亿语音/解说尚未实现。
+- 服务通知尚未接入：联系请求会落库并返回明文联系方式，但 `notificationStatus=not_configured`，房东还收不到微信服务通知。
+- 管理站鉴权、文档/截图导入、小亿语音/解说尚未实现。
 - 地图“3D/俯视”和微信订阅消息需要真机/真实小程序账号联调。

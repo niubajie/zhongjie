@@ -1,4 +1,4 @@
-import { getMap, getProperty, type MapQuery } from '../../utils/api'
+import { createContactRequest, getMap, getProperty, type MapQuery } from '../../utils/api'
 import type { MapCluster, MapItem, PropertyDetail } from '../../types/api'
 
 interface MarkerTarget {
@@ -48,6 +48,7 @@ interface MapPageData {
   showDetail: boolean
   rentYuan: string
   imageCount: number
+  contactLoading: boolean
   showRobot: boolean
   robotText: string
   hasToken: boolean
@@ -76,6 +77,7 @@ Page<MapPageData, WechatMiniprogram.Page.CustomOption>({
     showDetail: false,
     rentYuan: '',
     imageCount: 0,
+    contactLoading: false,
     showRobot: true,
     robotText: '我是小亿，想找什么样的房子？',
     hasToken: false,
@@ -313,9 +315,48 @@ Page<MapPageData, WechatMiniprogram.Page.CustomOption>({
         if (!res.confirm) {
           return
         }
-        wx.showToast({ title: '联系功能将在下一阶段接入', icon: 'none' })
+        this.submitContact(detail.uuid)
       },
     })
+  },
+
+  submitContact(uuid: string) {
+    this.setData({ contactLoading: true })
+    createContactRequest(uuid, true)
+      .then((result) => {
+        this.setData({ contactLoading: false })
+        if (!result.contactAvailable) {
+          wx.showModal({
+            title: '已提交联系请求',
+            content: result.message || '房东暂未授权展示联系方式。',
+            showCancel: false,
+          })
+          return
+        }
+        const lines: string[] = []
+        if (result.phone) {
+          lines.push(`电话：${result.phone}`)
+        }
+        if (result.wechatId) {
+          lines.push(`微信：${result.wechatId}`)
+        }
+        wx.showModal({
+          title: '房东联系方式',
+          content: lines.join('\n'),
+          showCancel: Boolean(result.phone),
+          cancelText: '关闭',
+          confirmText: result.phone ? '拨打' : '知道了',
+          success: (res) => {
+            if (res.confirm && result.phone) {
+              wx.makePhoneCall({ phoneNumber: result.phone })
+            }
+          },
+        })
+      })
+      .catch((err: Error) => {
+        this.setData({ contactLoading: false })
+        wx.showToast({ title: err.message || '提交失败', icon: 'none' })
+      })
   },
 
   onRobotStart() {

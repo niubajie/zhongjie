@@ -10,7 +10,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"housing/internal/config"
 	"housing/internal/db"
+	"housing/internal/secure"
 )
 
 func main() {
@@ -47,6 +49,32 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	pii, err := secure.NewPII(cfg.PIIEncKey, cfg.PIIHashKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	phone := "13900000000"
+	phoneEnc, err := pii.EncryptString(phone)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE users SET phone_enc=$2, phone_hash=$3, phone_mask=$4 WHERE id=$1
+	`, landlordID, phoneEnc, pii.HashPhone(phone), secure.MaskPhone(phone)); err != nil {
+		log.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO landlord_profiles (user_id, share_phone, share_wechat)
+		VALUES ($1, true, false)
+		ON CONFLICT (user_id) DO NOTHING
+	`, landlordID); err != nil {
+		log.Fatal(err)
 	}
 
 	buildings := []struct {
