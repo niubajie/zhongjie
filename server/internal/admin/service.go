@@ -177,6 +177,34 @@ func (s *Service) Stats(ctx context.Context) (Stats, error) {
 	return s.repo.Stats(ctx)
 }
 
+func (s *Service) ListImports(ctx context.Context, limit int) ([]ImportJobRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	return s.repo.ListImports(ctx, limit)
+}
+
+func (s *Service) ListBuildings(ctx context.Context, limit int) ([]BuildingRow, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 200
+	}
+	return s.repo.ListBuildings(ctx, limit)
+}
+
+func (s *Service) ListContacts(ctx context.Context, limit int) ([]ContactRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	return s.repo.ListContacts(ctx, limit)
+}
+
+func (s *Service) ListFreshness(ctx context.Context, limit int) ([]FreshnessRow, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	return s.repo.ListFreshness(ctx, limit)
+}
+
 func (s *Service) ListProperties(ctx context.Context, status string, limit, offset int) ([]PropertyRow, error) {
 	status = strings.TrimSpace(status)
 	switch status {

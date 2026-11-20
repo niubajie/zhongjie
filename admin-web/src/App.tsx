@@ -3,10 +3,18 @@ import {
   adminIntakeText,
   adminLogin,
   enableTOTP,
+  fetchAdminBuildings,
+  fetchAdminContacts,
+  fetchAdminFreshness,
+  fetchAdminImports,
   fetchAdminProperties,
   fetchAdminStats,
   moderateProperty,
   setupTOTP,
+  type AdminBuilding,
+  type AdminContact,
+  type AdminFreshness,
+  type AdminImportJob,
   type AdminLoginResult,
   type AdminProperty,
   type AdminStats,
@@ -93,15 +101,30 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   const [intakePhone, setIntakePhone] = useState('')
   const [intakeMessage, setIntakeMessage] = useState('')
   const [intakeLoading, setIntakeLoading] = useState(false)
+  const [imports, setImports] = useState<AdminImportJob[]>([])
+  const [buildings, setBuildings] = useState<AdminBuilding[]>([])
+  const [contacts, setContacts] = useState<AdminContact[]>([])
+  const [freshness, setFreshness] = useState<AdminFreshness[]>([])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    Promise.all([fetchAdminStats(session.token), fetchAdminProperties(session.token)])
-      .then(([nextStats, nextProperties]) => {
+    Promise.all([
+      fetchAdminStats(session.token),
+      fetchAdminProperties(session.token),
+      fetchAdminImports(session.token),
+      fetchAdminBuildings(session.token),
+      fetchAdminContacts(session.token),
+      fetchAdminFreshness(session.token),
+    ])
+      .then(([nextStats, nextProperties, nextImports, nextBuildings, nextContacts, nextFreshness]) => {
         if (!cancelled) {
           setStats(nextStats)
           setProperties(nextProperties)
+          setImports(nextImports)
+          setBuildings(nextBuildings)
+          setContacts(nextContacts)
+          setFreshness(nextFreshness)
           setError('')
         }
       })
@@ -278,6 +301,137 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                   <tr>
                     <td colSpan={6} className="empty">
                       暂无房源
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel" id="imports">
+          <h2>导入任务</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>文件</th>
+                  <th>类型</th>
+                  <th>状态</th>
+                  <th>成功 / 失败</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {imports.map((job) => (
+                  <tr key={job.uuid}>
+                    <td>{job.fileName}</td>
+                    <td>{job.fileType}</td>
+                    <td>{job.status}</td>
+                    <td>
+                      {job.successRows} / {job.errorRows}
+                    </td>
+                    <td>{job.createdAt}</td>
+                  </tr>
+                ))}
+                {imports.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="empty">
+                      暂无导入任务
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel" id="buildings">
+          <h2>楼宇词典</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>楼宇</th>
+                  <th>区域</th>
+                  <th>类型</th>
+                  <th>审核</th>
+                </tr>
+              </thead>
+              <tbody>
+                {buildings.map((building) => (
+                  <tr key={building.uuid}>
+                    <td>{building.name}</td>
+                    <td>
+                      {building.districtName} · {building.streetName}
+                    </td>
+                    <td>{building.buildingType}</td>
+                    <td>{building.reviewStatus}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel" id="contacts">
+          <h2>联系记录</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>租客</th>
+                  <th>手机号</th>
+                  <th>房源</th>
+                  <th>状态</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contacts.map((contact) => (
+                  <tr key={contact.uuid}>
+                    <td>{contact.tenantSurname || '—'}</td>
+                    <td>{contact.tenantPhoneMask}</td>
+                    <td>{contact.propertyTitle}</td>
+                    <td>{contact.status}</td>
+                    <td>{contact.createdAt}</td>
+                  </tr>
+                ))}
+                {contacts.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="empty">
+                      暂无联系记录
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel" id="freshness">
+          <h2>30 天巡检</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>房源</th>
+                  <th>状态</th>
+                  <th>生成时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {freshness.map((check) => (
+                  <tr key={check.id}>
+                    <td>{check.title}</td>
+                    <td>{check.status}</td>
+                    <td>{check.createdAt}</td>
+                  </tr>
+                ))}
+                {freshness.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="empty">
+                      暂无巡检任务
                     </td>
                   </tr>
                 )}

@@ -22,6 +22,45 @@ export interface AdminStats {
   contactRequests: number
 }
 
+export interface AdminImportJob {
+  uuid: string
+  fileName: string
+  fileType: string
+  status: string
+  totalRows: number
+  successRows: number
+  errorRows: number
+  createdAt: string
+}
+
+export interface AdminBuilding {
+  uuid: string
+  name: string
+  districtName: string
+  streetName: string
+  buildingType: string
+  reviewStatus: string
+  lat: number
+  lng: number
+}
+
+export interface AdminContact {
+  uuid: string
+  tenantSurname: string
+  tenantPhoneMask: string
+  propertyTitle: string
+  status: string
+  createdAt: string
+}
+
+export interface AdminFreshness {
+  id: number
+  propertyUuid: string
+  title: string
+  status: string
+  createdAt: string
+}
+
 export interface AdminProperty {
   uuid: string
   title: string
@@ -127,6 +166,26 @@ export async function enableTOTP(token: string, code: string): Promise<boolean> 
     token,
   )
   return data.enabled
+}
+
+export async function fetchAdminImports(token: string, limit = 50): Promise<AdminImportJob[]> {
+  const data = await request<{ items: AdminImportJob[] }>(`/v1/admin/imports?limit=${limit}`, {}, token)
+  return data.items
+}
+
+export async function fetchAdminBuildings(token: string, limit = 200): Promise<AdminBuilding[]> {
+  const data = await request<{ items: AdminBuilding[] }>(`/v1/admin/buildings?limit=${limit}`, {}, token)
+  return data.items
+}
+
+export async function fetchAdminContacts(token: string, limit = 50): Promise<AdminContact[]> {
+  const data = await request<{ items: AdminContact[] }>(`/v1/admin/contacts?limit=${limit}`, {}, token)
+  return data.items
+}
+
+export async function fetchAdminFreshness(token: string, limit = 50): Promise<AdminFreshness[]> {
+  const data = await request<{ items: AdminFreshness[] }>(`/v1/admin/freshness?limit=${limit}`, {}, token)
+  return data.items
 }
 
 export async function fetchAdminProperties(token: string, limit = 20): Promise<AdminProperty[]> {

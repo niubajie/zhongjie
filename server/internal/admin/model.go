@@ -45,6 +45,45 @@ type PropertyRow struct {
 	CreatedAt    string  `json:"createdAt"`
 }
 
+type ImportJobRow struct {
+	UUID        string `json:"uuid"`
+	FileName    string `json:"fileName"`
+	FileType    string `json:"fileType"`
+	Status      string `json:"status"`
+	TotalRows   int    `json:"totalRows"`
+	SuccessRows int    `json:"successRows"`
+	ErrorRows   int    `json:"errorRows"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+type BuildingRow struct {
+	UUID         string  `json:"uuid"`
+	Name         string  `json:"name"`
+	DistrictName string  `json:"districtName"`
+	StreetName   string  `json:"streetName"`
+	BuildingType string  `json:"buildingType"`
+	ReviewStatus string  `json:"reviewStatus"`
+	Lat          float64 `json:"lat"`
+	Lng          float64 `json:"lng"`
+}
+
+type ContactRow struct {
+	UUID            string `json:"uuid"`
+	TenantSurname   string `json:"tenantSurname"`
+	TenantPhoneMask string `json:"tenantPhoneMask"`
+	PropertyTitle   string `json:"propertyTitle"`
+	Status          string `json:"status"`
+	CreatedAt       string `json:"createdAt"`
+}
+
+type FreshnessRow struct {
+	ID           int64  `json:"id"`
+	PropertyUUID string `json:"propertyUuid"`
+	Title        string `json:"title"`
+	Status       string `json:"status"`
+	CreatedAt    string `json:"createdAt"`
+}
+
 func (a Admin) Public() PublicAdmin {
 	return PublicAdmin{UUID: a.UUID, Username: a.Username, Role: a.Role}
 }

@@ -165,6 +165,106 @@ func (r *Repository) Audit(ctx context.Context, adminID int64, action, targetTyp
 	return nil
 }
 
+func (r *Repository) ListImports(ctx context.Context, limit int) ([]ImportJobRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT uuid::text, file_name, file_type, status, total_rows, success_rows, error_rows,
+		       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+		FROM import_jobs
+		ORDER BY created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list imports: %w", err)
+	}
+	defer rows.Close()
+	out := []ImportJobRow{}
+	for rows.Next() {
+		var row ImportJobRow
+		if err := rows.Scan(&row.UUID, &row.FileName, &row.FileType, &row.Status,
+			&row.TotalRows, &row.SuccessRows, &row.ErrorRows, &row.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListBuildings(ctx context.Context, limit int) ([]BuildingRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT uuid::text, name, district_name, street_name, building_type, review_status,
+		       lat::float8, lng::float8
+		FROM buildings
+		WHERE city_code = '440300' AND deleted_at IS NULL
+		ORDER BY name
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list buildings: %w", err)
+	}
+	defer rows.Close()
+	out := []BuildingRow{}
+	for rows.Next() {
+		var row BuildingRow
+		if err := rows.Scan(&row.UUID, &row.Name, &row.DistrictName, &row.StreetName,
+			&row.BuildingType, &row.ReviewStatus, &row.Lat, &row.Lng); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListContacts(ctx context.Context, limit int) ([]ContactRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT cr.uuid::text, COALESCE(u.surname, ''), COALESCE(u.phone_mask, ''),
+		       p.title_public, cr.status,
+		       to_char(cr.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+		FROM contact_requests cr
+		JOIN users u ON u.id = cr.tenant_id
+		JOIN properties p ON p.id = cr.property_id
+		ORDER BY cr.created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list contacts: %w", err)
+	}
+	defer rows.Close()
+	out := []ContactRow{}
+	for rows.Next() {
+		var row ContactRow
+		if err := rows.Scan(&row.UUID, &row.TenantSurname, &row.TenantPhoneMask,
+			&row.PropertyTitle, &row.Status, &row.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) ListFreshness(ctx context.Context, limit int) ([]FreshnessRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT fc.id, p.uuid::text, p.title_public, fc.status,
+		       to_char(fc.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+		FROM freshness_checks fc
+		JOIN properties p ON p.id = fc.property_id
+		ORDER BY fc.created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list freshness: %w", err)
+	}
+	defer rows.Close()
+	out := []FreshnessRow{}
+	for rows.Next() {
+		var row FreshnessRow
+		if err := rows.Scan(&row.ID, &row.PropertyUUID, &row.Title, &row.Status, &row.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) AuditLogin(ctx context.Context, adminID int64, username string) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO audit_logs (actor_type, actor_id, action, target_type, target_id)

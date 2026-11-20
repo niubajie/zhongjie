@@ -28,6 +28,10 @@ func (h *Handler) RegisterAuth(r *gin.RouterGroup) {
 	r.GET("/stats", h.stats)
 	r.GET("/properties", h.properties)
 	r.POST("/properties/:uuid/moderate", h.moderate)
+	r.GET("/imports", h.imports)
+	r.GET("/buildings", h.buildings)
+	r.GET("/contacts", h.contacts)
+	r.GET("/freshness", h.freshness)
 	r.POST("/auth/totp/setup", h.setupTOTP)
 	r.POST("/auth/totp/enable", h.enableTOTP)
 	r.POST("/auth/totp/disable", h.disableTOTP)
@@ -167,6 +171,54 @@ func (h *Handler) moderate(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"status": status})
+}
+
+func (h *Handler) imports(c *gin.Context) {
+	items, err := h.svc.ListImports(c.Request.Context(), queryLimit(c, 50))
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "导入任务加载失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *Handler) buildings(c *gin.Context) {
+	items, err := h.svc.ListBuildings(c.Request.Context(), queryLimit(c, 200))
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "楼宇加载失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *Handler) contacts(c *gin.Context) {
+	items, err := h.svc.ListContacts(c.Request.Context(), queryLimit(c, 50))
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "联系记录加载失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *Handler) freshness(c *gin.Context) {
+	items, err := h.svc.ListFreshness(c.Request.Context(), queryLimit(c, 50))
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "巡检记录加载失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func queryLimit(c *gin.Context, fallback int) int {
+	raw := strings.TrimSpace(c.Query("limit"))
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return fallback
+	}
+	return n
 }
 
 func (h *Handler) properties(c *gin.Context) {
