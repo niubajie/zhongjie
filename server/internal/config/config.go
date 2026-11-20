@@ -13,21 +13,23 @@ import (
 // variables in production; the dev defaults only exist so the project can run
 // locally without a secret manager.
 type Config struct {
-	Env                string
-	HTTPAddr           string
-	DatabaseURL        string
-	RedisURL           string
-	JWTSecret          string
-	JWTAccessTTL       time.Duration
-	AdminJWTSecret     string
-	AdminJWTAccessTTL  time.Duration
-	WeChatAppID        string
-	WeChatSecret       string
-	PIIEncKey          string
-	PIIHashKey         string
-	DevLoginEnabled    bool
-	LogLevel           string
-	AllowedAdminOrigin string
+	Env                       string
+	HTTPAddr                  string
+	DatabaseURL               string
+	RedisURL                  string
+	JWTSecret                 string
+	JWTAccessTTL              time.Duration
+	AdminJWTSecret            string
+	AdminJWTAccessTTL         time.Duration
+	WeChatAppID               string
+	WeChatSecret              string
+	WeChatSubscribeTemplateID string
+	WeChatSubscribePage       string
+	PIIEncKey                 string
+	PIIHashKey                string
+	DevLoginEnabled           bool
+	LogLevel                  string
+	AllowedAdminOrigin        string
 }
 
 func Load() (Config, error) {
@@ -38,18 +40,20 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		Env:                env,
-		HTTPAddr:           getenv("HTTP_ADDR", ":8080"),
-		DatabaseURL:        getenv("DATABASE_URL", "postgres://housing:housing@localhost:56000/housing?sslmode=disable"),
-		RedisURL:           getenv("REDIS_URL", "redis://localhost:56379/0"),
-		JWTSecret:          os.Getenv("JWT_SECRET"),
-		AdminJWTSecret:     os.Getenv("ADMIN_JWT_SECRET"),
-		WeChatAppID:        os.Getenv("WECHAT_APPID"),
-		WeChatSecret:       os.Getenv("WECHAT_SECRET"),
-		PIIEncKey:          os.Getenv("PII_ENC_KEY"),
-		PIIHashKey:         os.Getenv("PII_HASH_KEY"),
-		LogLevel:           getenv("LOG_LEVEL", "info"),
-		AllowedAdminOrigin: getenv("ADMIN_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173"),
+		Env:                       env,
+		HTTPAddr:                  getenv("HTTP_ADDR", ":8080"),
+		DatabaseURL:               getenv("DATABASE_URL", "postgres://housing:housing@localhost:56000/housing?sslmode=disable"),
+		RedisURL:                  getenv("REDIS_URL", "redis://localhost:56379/0"),
+		JWTSecret:                 os.Getenv("JWT_SECRET"),
+		AdminJWTSecret:            os.Getenv("ADMIN_JWT_SECRET"),
+		WeChatAppID:               os.Getenv("WECHAT_APPID"),
+		WeChatSecret:              os.Getenv("WECHAT_SECRET"),
+		WeChatSubscribeTemplateID: getenv("WECHAT_SUBSCRIBE_TEMPLATE_ID", ""),
+		WeChatSubscribePage:       getenv("WECHAT_SUBSCRIBE_PAGE", "pages/map/index"),
+		PIIEncKey:                 os.Getenv("PII_ENC_KEY"),
+		PIIHashKey:                os.Getenv("PII_HASH_KEY"),
+		LogLevel:                  getenv("LOG_LEVEL", "info"),
+		AllowedAdminOrigin:        getenv("ADMIN_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173"),
 	}
 
 	ttl, err := time.ParseDuration(getenv("JWT_ACCESS_TTL", defaultAccessTTL(env)))

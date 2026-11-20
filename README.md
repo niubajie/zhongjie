@@ -50,7 +50,7 @@ cp .env.example .env   # 本地可改端口/密钥；.env 不进 Git
 go run ./cmd/seed      # 迁移 + 种子数据
 go run ./cmd/api
 # 另开终端：
-go run ./cmd/worker    # 30 天巡检任务
+go run ./cmd/worker    # 30 天巡检 + 通知 outbox（30 秒轮询）
 ```
 
 默认监听 `http://127.0.0.1:8080`。
@@ -172,6 +172,8 @@ npm run dev
 | `ADMIN_JWT_SECRET` | 管理站 JWT，必须与租客端不同，≥32 字符 |
 | `ADMIN_JWT_ACCESS_TTL` | 管理站 token 有效期，默认 `8h` |
 | `WECHAT_APPID` / `WECHAT_SECRET` | 微信小程序凭证 |
+| `WECHAT_SUBSCRIBE_TEMPLATE_ID` | 房东联系提醒订阅消息模板 ID；为空时 outbox 标记 `not_configured` |
+| `WECHAT_SUBSCRIBE_PAGE` | 订阅消息跳转页面，默认 `pages/map/index` |
 | `PII_ENC_KEY` | base64 编码的 32 字节 AES-GCM key |
 | `PII_HASH_KEY` | 手机号 HMAC key |
 | `DEV_LOGIN_ENABLED` | 生产必须为 `false` |

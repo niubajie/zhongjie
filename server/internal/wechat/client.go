@@ -122,6 +122,47 @@ func (c *Client) GetPhoneNumber(ctx context.Context, code string) (string, error
 	return "", errors.New("wechat get phone: empty phone")
 }
 
+func (c *Client) SendSubscribeMessage(ctx context.Context, openID, templateID, page string, data map[string]string) error {
+	token, err := c.getAccessToken(ctx)
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{
+		"touser":      openID,
+		"template_id": templateID,
+		"page":        page,
+		"data":        map[string]any{},
+	}
+	fields := payload["data"].(map[string]any)
+	for key, value := range data {
+		fields[key] = map[string]string{"value": value}
+	}
+	body, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token="+url.QueryEscape(token),
+		bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("wechat subscribe send: %w", err)
+	}
+	defer resp.Body.Close()
+	var out struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := decodeJSON(resp.Body, &out); err != nil {
+		return err
+	}
+	if out.ErrCode != 0 {
+		return fmt.Errorf("wechat subscribe send: %d %s", out.ErrCode, out.ErrMsg)
+	}
+	return nil
+}
+
 func (c *Client) getAccessToken(ctx context.Context) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
