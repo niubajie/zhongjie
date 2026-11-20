@@ -1,8 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   adminLogin,
+  enableTOTP,
   fetchAdminProperties,
   fetchAdminStats,
+  moderateProperty,
+  setupTOTP,
   type AdminLoginResult,
   type AdminProperty,
   type AdminStats,
@@ -81,6 +84,10 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   const [properties, setProperties] = useState<AdminProperty[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [totpSecret, setTotpSecret] = useState('')
+  const [totpURL, setTotpURL] = useState('')
+  const [totpCode, setTotpCode] = useState('')
+  const [totpMessage, setTotpMessage] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -107,6 +114,38 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       cancelled = true
     }
   }, [session.token])
+
+  function toggleProperty(property: AdminProperty) {
+    const action = property.status === 'active' ? 'offline' : 'approve'
+    moderateProperty(session.token, property.uuid, action)
+      .then((status) => {
+        setProperties((prev) =>
+          prev.map((item) => (item.uuid === property.uuid ? { ...item, status } : item)),
+        )
+      })
+      .catch((err: Error) => setError(err.message || '操作失败'))
+  }
+
+  function beginTOTP() {
+    setTotpMessage('')
+    setupTOTP(session.token)
+      .then((result) => {
+        setTotpSecret(result.secret)
+        setTotpURL(result.otpauthUrl)
+      })
+      .catch((err: Error) => setTotpMessage(err.message || '生成失败'))
+  }
+
+  function confirmTOTP() {
+    enableTOTP(session.token, totpCode.trim())
+      .then(() => {
+        setTotpSecret('')
+        setTotpURL('')
+        setTotpCode('')
+        setTotpMessage('TOTP 已启用，下次登录需要动态验证码。')
+      })
+      .catch((err: Error) => setTotpMessage(err.message || '启用失败'))
+  }
 
   return (
     <div className="shell">
@@ -168,6 +207,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                   <th>面积</th>
                   <th>月租</th>
                   <th>状态</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -182,11 +222,16 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                     <td>
                       <span className={`status status-${property.status}`}>{property.status}</span>
                     </td>
+                    <td>
+                      <button className="table-action" onClick={() => toggleProperty(property)}>
+                        {property.status === 'active' ? '下架' : '上架'}
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {properties.length === 0 && !loading && (
                   <tr>
-                    <td colSpan={5} className="empty">
+                    <td colSpan={6} className="empty">
                       暂无房源
                     </td>
                   </tr>
@@ -202,8 +247,36 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
             <li>管理员 token 与租客 token 使用不同 secret + issuer，互不通用</li>
             <li>登录成功写入 audit_logs（admin_login）</li>
             <li>管理接口走 RequireAdmin 中间件</li>
-            <li>TOTP 字段已预留；绑定/强制校验在 M2.1 接入</li>
+            <li>TOTP 已支持绑定与登录校验</li>
           </ul>
+          <div className="totp-box">
+            {!totpSecret && (
+              <button className="btn secondary" onClick={beginTOTP}>
+                设置动态验证码
+              </button>
+            )}
+            {totpSecret && (
+              <>
+                <p className="muted">
+                  把下面密钥加入验证器，或打开 otpauth URL；然后输入 6 位验证码。
+                </p>
+                <code className="secret">{totpSecret}</code>
+                <code className="secret small">{totpURL}</code>
+                <div className="totp-row">
+                  <input
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value)}
+                    placeholder="6 位验证码"
+                    inputMode="numeric"
+                  />
+                  <button className="btn primary" onClick={confirmTOTP}>
+                    启用
+                  </button>
+                </div>
+              </>
+            )}
+            {totpMessage && <p className="muted">{totpMessage}</p>}
+          </div>
         </section>
       </main>
     </div>

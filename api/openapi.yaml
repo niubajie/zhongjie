@@ -11,6 +11,7 @@ tags:
   - name: user
   - name: property
   - name: admin
+  - name: assistant
 paths:
   /healthz:
     get:
@@ -322,6 +323,292 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/AdminProperty"
+  /v1/assistant/sessions:
+    post:
+      tags: [assistant]
+      summary: 创建小亿会话
+      security: []
+      responses:
+        "201":
+          description: 会话
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      sessionId: {type: string, format: uuid}
+                      slots: {type: object}
+  /v1/assistant/messages:
+    post:
+      tags: [assistant]
+      summary: 小亿对话与槽位收集
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, text]
+              properties:
+                sessionId: {type: string, format: uuid}
+                text: {type: string}
+      responses:
+        "200":
+          description: 回复
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      sessionId: {type: string, format: uuid}
+                      reply: {type: string}
+                      slots: {type: object}
+                      ready: {type: boolean}
+                      action: {type: string}
+  /v1/assistant/recommendations:
+    get:
+      tags: [assistant]
+      summary: 小亿推荐房源
+      security: []
+      parameters:
+        - name: sessionId
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 推荐列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      sessionId: {type: string, format: uuid}
+                      items: {type: array, items: {type: object}}
+                      message: {type: string}
+  /v1/properties/{uuid}/narration:
+    get:
+      tags: [assistant]
+      summary: 小亿逐套解说脚本
+      security: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 解说脚本
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data: {type: object}
+  /v1/properties/{uuid}/tour:
+    get:
+      tags: [assistant]
+      summary: 房源图片/视频/地图坐标
+      security: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 展示资源
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data: {type: object}
+  /v1/landlord/properties/{uuid}/freshness:
+    post:
+      tags: [property]
+      summary: 房东回应 30 天在租巡检
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, rented, offline]
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/landlord/properties/imports:
+    post:
+      tags: [property]
+      summary: 上传 docx/xlsx 导入房源
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: 导入结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      jobId: {type: string, format: uuid}
+                      totalRows: {type: integer}
+                      successRows: {type: integer}
+                      errorRows: {type: integer}
+  /v1/admin/properties/{uuid}/moderate:
+    post:
+      tags: [admin]
+      summary: 审核/下架房源
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: {type: string, enum: [approve, offline]}
+                reason: {type: string}
+      responses:
+        "200":
+          description: 新状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/auth/totp/setup:
+    post:
+      tags: [admin]
+      summary: 生成 TOTP 密钥
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: secret 与 otpauth URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data: {type: object}
+  /v1/admin/auth/totp/enable:
+    post:
+      tags: [admin]
+      summary: 启用 TOTP
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string}
+      responses:
+        "200":
+          description: 已启用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/auth/totp/disable:
+    post:
+      tags: [admin]
+      summary: 关闭 TOTP
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string}
+      responses:
+        "200":
+          description: 已关闭
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/freshness/run:
+    post:
+      tags: [admin]
+      summary: 手动生成 30 天巡检任务
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 生成数量
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
   /v1/contact-requests:
     post:
       tags: [property]

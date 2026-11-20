@@ -91,6 +91,60 @@ export interface CreatedProperty {
   pendingReason?: string
 }
 
+export interface AssistantSession {
+  sessionId: string
+  slots: Record<string, string | number | boolean>
+}
+
+export interface AssistantReply {
+  sessionId: string
+  reply: string
+  slots: Record<string, string | number | boolean>
+  ready: boolean
+  action?: string
+}
+
+export interface AssistantItem {
+  uuid: string
+  title: string
+  districtName: string
+  streetName: string
+  areaSqm: number
+  rentCents: number
+  layout?: string
+  score: number
+  reasons: string[]
+  imageCount: number
+}
+
+export interface AssistantRecommendations {
+  sessionId: string
+  items: AssistantItem[]
+  message?: string
+}
+
+export interface NarrationSegment {
+  seq: number
+  scene: string
+  text: string
+  action: string
+  imageId?: string
+  mediaId?: string
+}
+
+export interface Narration {
+  propertyId: string
+  segments: NarrationSegment[]
+}
+
+export interface Tour {
+  propertyId: string
+  images: string[]
+  videos: string[]
+  lat: number
+  lng: number
+}
+
 export interface ContactReveal {
   requestUuid: string
   phone?: string

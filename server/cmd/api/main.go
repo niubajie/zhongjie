@@ -12,12 +12,15 @@ import (
 	"time"
 
 	"housing/internal/admin"
+	"housing/internal/assistant"
 	"housing/internal/auth"
 	"housing/internal/building"
 	"housing/internal/config"
 	"housing/internal/contact"
 	"housing/internal/db"
+	"housing/internal/freshness"
 	"housing/internal/httpapi"
+	"housing/internal/importjob"
 	"housing/internal/property"
 	"housing/internal/secure"
 	"housing/internal/user"
@@ -80,16 +83,31 @@ func main() {
 	contactSvc := contact.NewService(contactRepo, pii)
 	contactHandler := contact.NewHandler(contactSvc)
 
+	freshnessRepo := freshness.NewRepository(pool)
+	freshnessSvc := freshness.NewService(freshnessRepo)
+	freshnessHandler := freshness.NewHandler(freshnessSvc)
+
+	assistantRepo := assistant.NewRepository(pool)
+	assistantSvc := assistant.NewService(assistantRepo)
+	assistantHandler := assistant.NewHandler(assistantSvc)
+
+	importRepo := importjob.NewRepository(pool)
+	importSvc := importjob.NewService(importRepo, propertySvc, buildingSvc)
+	importHandler := importjob.NewHandler(importSvc)
+
 	adminRepo := admin.NewRepository(pool)
 	adminSvc := admin.NewService(adminRepo, pii, adminTokens)
 	adminHandler := admin.NewHandler(adminSvc)
 
 	router := httpapi.NewRouter(cfg, log, tokens, adminTokens, httpapi.Handlers{
-		User:     userHandler,
-		Property: propertyHandler,
-		Building: buildingHandler,
-		Contact:  contactHandler,
-		Admin:    adminHandler,
+		User:      userHandler,
+		Property:  propertyHandler,
+		Building:  buildingHandler,
+		Contact:   contactHandler,
+		Freshness: freshnessHandler,
+		Assistant: assistantHandler,
+		Import:    importHandler,
+		Admin:     adminHandler,
 	})
 
 	srv := &http.Server{

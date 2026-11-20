@@ -1,12 +1,17 @@
 import type {
+  AssistantRecommendations,
+  AssistantReply,
+  AssistantSession,
   AuthResult,
   BuildingSuggest,
   ContactReveal,
   CreatedProperty,
   CreatePropertyInput,
   MapData,
+  Narration,
   PropertyDetail,
   PublicUser,
+  Tour,
 } from '../types/api'
 import { request } from './request'
 
@@ -75,6 +80,41 @@ export function createProperty(input: CreatePropertyInput): Promise<CreatedPrope
   return request<CreatedProperty>('/v1/landlord/properties', {
     method: 'POST',
     data: input,
+  })
+}
+
+export function createAssistantSession(): Promise<AssistantSession> {
+  return request<AssistantSession>('/v1/assistant/sessions', {
+    method: 'POST',
+    auth: false,
+    data: {},
+  })
+}
+
+export function assistantMessage(sessionId: string, text: string): Promise<AssistantReply> {
+  return request<AssistantReply>('/v1/assistant/messages', {
+    method: 'POST',
+    auth: false,
+    data: { sessionId, text },
+  })
+}
+
+export function getAssistantRecommendations(sessionId: string): Promise<AssistantRecommendations> {
+  return request<AssistantRecommendations>(
+    `/v1/assistant/recommendations?sessionId=${encodeURIComponent(sessionId)}`,
+    { auth: false },
+  )
+}
+
+export function getNarration(propertyUuid: string): Promise<Narration> {
+  return request<Narration>(`/v1/properties/${encodeURIComponent(propertyUuid)}/narration`, {
+    auth: false,
+  })
+}
+
+export function getTour(propertyUuid: string): Promise<Tour> {
+  return request<Tour>(`/v1/properties/${encodeURIComponent(propertyUuid)}/tour`, {
+    auth: false,
   })
 }
 

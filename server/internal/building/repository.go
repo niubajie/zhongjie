@@ -55,6 +55,28 @@ func (r *Repository) Suggest(ctx context.Context, cityCode, keyword string, limi
 	return out, rows.Err()
 }
 
+func (r *Repository) FindByName(ctx context.Context, cityCode, name string) (Building, error) {
+	var b Building
+	err := r.pool.QueryRow(ctx, `
+		SELECT id, uuid::text, city_code, name, district_code, district_name, street_code, street_name, building_type,
+		       lat::float8, lng::float8, review_status
+		FROM buildings
+		WHERE city_code = $1 AND status = 'active' AND deleted_at IS NULL
+		  AND review_status = 'approved'
+		  AND (name = $2 OR $2 = ANY(aliases) OR name ILIKE '%' || $2 || '%')
+		ORDER BY CASE WHEN name = $2 THEN 0 ELSE 1 END, name
+		LIMIT 1
+	`, cityCode, name).Scan(&b.ID, &b.UUID, &b.CityCode, &b.Name, &b.DistrictCode, &b.DistrictName,
+		&b.StreetCode, &b.StreetName, &b.BuildingType, &b.Lat, &b.Lng, &b.ReviewStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Building{}, ErrNotFound
+	}
+	if err != nil {
+		return Building{}, fmt.Errorf("find building by name: %w", err)
+	}
+	return b, nil
+}
+
 func (r *Repository) GetByUUID(ctx context.Context, uuid string) (Building, error) {
 	var b Building
 	err := r.pool.QueryRow(ctx, `

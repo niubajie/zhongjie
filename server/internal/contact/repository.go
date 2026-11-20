@@ -125,6 +125,17 @@ func (r *Repository) Create(ctx context.Context, tenantID int64, t Target, note 
 	return uuid, nil
 }
 
+func (r *Repository) EnqueueNotification(ctx context.Context, landlordID int64, payload []byte) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO notification_outbox (event_type, recipient_id, payload_enc, status)
+		VALUES ('contact_request', $1, $2, 'pending')
+	`, landlordID, payload)
+	if err != nil {
+		return fmt.Errorf("enqueue notification: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) Audit(ctx context.Context, tenantID int64, targetUUID string) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO audit_logs (actor_type, actor_id, action, target_type, target_id)

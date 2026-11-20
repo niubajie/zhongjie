@@ -79,6 +79,100 @@ func (s *Service) Get(ctx context.Context, id int64) (Admin, error) {
 	return s.repo.FindByID(ctx, id)
 }
 
+func (s *Service) SetupTOTP(ctx context.Context, id int64) (string, string, error) {
+	a, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return "", "", err
+	}
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "房屋中介管理站",
+		AccountName: a.Username,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("generate totp: %w", err)
+	}
+	enc, err := s.pii.EncryptString(key.Secret())
+	if err != nil {
+		return "", "", err
+	}
+	if err := s.repo.SetTOTPSecret(ctx, id, enc); err != nil {
+		return "", "", err
+	}
+	s.audit(ctx, id, "admin_totp_setup", "admin_user", a.UUID)
+	return key.Secret(), key.URL(), nil
+}
+
+func (s *Service) EnableTOTP(ctx context.Context, id int64, code string) error {
+	a, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(a.TOTPSecretEnc) == 0 {
+		return ErrTOTPRequired
+	}
+	secret, err := s.pii.DecryptString(a.TOTPSecretEnc)
+	if err != nil {
+		return err
+	}
+	if !totp.Validate(strings.TrimSpace(code), secret) {
+		return ErrTOTPInvalid
+	}
+	if err := s.repo.SetTOTPEnabled(ctx, id, true); err != nil {
+		return err
+	}
+	s.audit(ctx, id, "admin_totp_enable", "admin_user", a.UUID)
+	return nil
+}
+
+func (s *Service) DisableTOTP(ctx context.Context, id int64, code string) error {
+	a, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(a.TOTPSecretEnc) == 0 {
+		return nil
+	}
+	secret, err := s.pii.DecryptString(a.TOTPSecretEnc)
+	if err != nil {
+		return err
+	}
+	if !totp.Validate(strings.TrimSpace(code), secret) {
+		return ErrTOTPInvalid
+	}
+	if err := s.repo.SetTOTPEnabled(ctx, id, false); err != nil {
+		return err
+	}
+	s.audit(ctx, id, "admin_totp_disable", "admin_user", a.UUID)
+	return nil
+}
+
+func (s *Service) ModerateProperty(ctx context.Context, adminID int64, uuid, action, reason string) (string, error) {
+	action = strings.TrimSpace(action)
+	if action != "approve" && action != "offline" {
+		return "", ErrInvalidStatus
+	}
+	status, err := s.repo.ModerateProperty(ctx, strings.TrimSpace(uuid), action, clip(reason, 200))
+	if err != nil {
+		return "", err
+	}
+	s.audit(ctx, adminID, "property_moderate", "property", uuid)
+	return status, nil
+}
+
+func (s *Service) audit(ctx context.Context, adminID int64, action, targetType, targetID string) {
+	// Audit failures must not break a successful primary action; they are
+	// surfaced in logs by the repository caller in a later iteration.
+	_ = s.repo.Audit(ctx, adminID, action, targetType, targetID)
+}
+
+func clip(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len([]rune(s)) <= max {
+		return s
+	}
+	return string([]rune(s)[:max])
+}
+
 func (s *Service) Stats(ctx context.Context) (Stats, error) {
 	return s.repo.Stats(ctx)
 }

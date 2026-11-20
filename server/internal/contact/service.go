@@ -2,6 +2,7 @@ package contact
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -77,8 +78,26 @@ func (s *Service) Create(ctx context.Context, tenantID int64, in CreateInput) (R
 		return Reveal{}, err
 	}
 
+	notificationStatus := "not_configured"
+	payload, _ := json.Marshal(map[string]any{
+		"requestUuid": requestUUID,
+		"tenantId":    tenantID,
+		"propertyId":  target.PropertyID,
+		"title":       target.Title,
+		"district":    target.DistrictName,
+		"street":      target.StreetName,
+	})
+	if enc, err := s.pii.EncryptString(string(payload)); err == nil {
+		if err := s.repo.EnqueueNotification(ctx, target.LandlordID, enc); err == nil {
+			notificationStatus = "queued"
+		}
+	}
+
 	available := phone != "" || wechatID != ""
-	message := "已记录联系请求；房东微信服务通知将在通知模块接入后发送。"
+	message := "已记录联系请求，通知已进入队列。"
+	if notificationStatus != "queued" {
+		message = "已记录联系请求；通知服务暂不可用。"
+	}
 	if !available {
 		message = "已记录联系请求；房东暂未授权展示联系方式。"
 	}
@@ -87,7 +106,7 @@ func (s *Service) Create(ctx context.Context, tenantID int64, in CreateInput) (R
 		Phone:              phone,
 		WechatID:           wechatID,
 		ContactAvailable:   available,
-		NotificationStatus: "not_configured",
+		NotificationStatus: notificationStatus,
 		Message:            message,
 	}, nil
 }

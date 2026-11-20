@@ -78,6 +78,36 @@ export async function fetchAdminStats(token: string): Promise<AdminStats> {
   return request<AdminStats>('/v1/admin/stats', {}, token)
 }
 
+export async function moderateProperty(
+  token: string,
+  uuid: string,
+  action: 'approve' | 'offline',
+): Promise<string> {
+  const data = await request<{ status: string }>(
+    `/v1/admin/properties/${encodeURIComponent(uuid)}/moderate`,
+    { method: 'POST', body: JSON.stringify({ action }) },
+    token,
+  )
+  return data.status
+}
+
+export async function setupTOTP(token: string): Promise<{ secret: string; otpauthUrl: string }> {
+  return request<{ secret: string; otpauthUrl: string }>(
+    '/v1/admin/auth/totp/setup',
+    { method: 'POST', body: '{}' },
+    token,
+  )
+}
+
+export async function enableTOTP(token: string, code: string): Promise<boolean> {
+  const data = await request<{ enabled: boolean }>(
+    '/v1/admin/auth/totp/enable',
+    { method: 'POST', body: JSON.stringify({ code }) },
+    token,
+  )
+  return data.enabled
+}
+
 export async function fetchAdminProperties(token: string, limit = 20): Promise<AdminProperty[]> {
   const data = await request<{ items: AdminProperty[] }>(
     `/v1/admin/properties?limit=${limit}`,

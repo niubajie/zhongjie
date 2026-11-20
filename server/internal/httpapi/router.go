@@ -7,21 +7,27 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"housing/internal/admin"
+	"housing/internal/assistant"
 	"housing/internal/auth"
 	"housing/internal/building"
 	"housing/internal/config"
 	"housing/internal/contact"
+	"housing/internal/freshness"
 	"housing/internal/httpx"
+	"housing/internal/importjob"
 	"housing/internal/property"
 	"housing/internal/user"
 )
 
 type Handlers struct {
-	User     *user.Handler
-	Property *property.Handler
-	Building *building.Handler
-	Contact  *contact.Handler
-	Admin    *admin.Handler
+	User      *user.Handler
+	Property  *property.Handler
+	Building  *building.Handler
+	Contact   *contact.Handler
+	Freshness *freshness.Handler
+	Assistant *assistant.Handler
+	Import    *importjob.Handler
+	Admin     *admin.Handler
 }
 
 func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr *auth.Manager, handlers Handlers) *gin.Engine {
@@ -38,6 +44,9 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr 
 	v1 := r.Group("/v1")
 	handlers.User.RegisterPublic(v1)
 	handlers.Property.Register(v1)
+	if handlers.Assistant != nil {
+		handlers.Assistant.Register(v1)
+	}
 	if handlers.Building != nil {
 		handlers.Building.Register(v1)
 	}
@@ -46,6 +55,9 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr 
 		adminGroup := v1.Group("/admin")
 		adminGroup.Use(RequireAdmin(adminMgr))
 		handlers.Admin.RegisterAuth(adminGroup)
+		if handlers.Freshness != nil {
+			handlers.Freshness.RegisterAdmin(adminGroup)
+		}
 	}
 
 	protected := v1.Group("")
@@ -54,6 +66,12 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr 
 	handlers.Property.RegisterAuth(protected)
 	if handlers.Contact != nil {
 		handlers.Contact.RegisterAuth(protected)
+	}
+	if handlers.Freshness != nil {
+		handlers.Freshness.RegisterLandlord(protected)
+	}
+	if handlers.Import != nil {
+		handlers.Import.RegisterAuth(protected)
 	}
 
 	r.NoRoute(func(c *gin.Context) {

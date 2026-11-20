@@ -1,0 +1,109 @@
+<view class="assistant-page">
+  <view class="head">
+    <button class="back" bindtap="onBack">‹</button>
+    <view class="head-main">
+      <text class="title">小亿</text>
+      <text class="sub">AI 找房助手 · 先聊需求，再看房</text>
+    </view>
+    <view class="avatar"><view class="avatar-face"><view class="eye"></view><view class="eye"></view></view></view>
+  </view>
+
+  <scroll-view class="chat" scroll-y>
+    <view class="msg {{item.role}}" wx:for="{{messages}}" wx:key="index">
+      <text class="msg-role">{{item.role === 'robot' ? '小亿' : '你'}}</text>
+      <text class="msg-text">{{item.text}}</text>
+    </view>
+    <view class="msg robot" wx:if="{{loading}}">
+      <text class="msg-role">小亿</text>
+      <text class="msg-text">正在想…</text>
+    </view>
+  </scroll-view>
+
+  <view class="quick" wx:if="{{!items.length}}">
+    <button class="quick-btn" bindtap="onStartRecommend">就这些，开始找房</button>
+  </view>
+
+  <view class="feed-wrap" wx:if="{{items.length > 0}}">
+    <swiper class="feed" vertical current="{{current}}" bindchange="onCardChange" circular="{{false}}">
+      <swiper-item wx:for="{{items}}" wx:key="uuid">
+        <view class="property-card">
+          <view class="cover">
+            <text class="cover-title">{{item.title}}</text>
+            <text class="cover-score">匹配度 {{item.score}}</text>
+          </view>
+          <view class="card-body">
+            <text class="card-loc">{{item.districtName}} · {{item.streetName}}（仅区/街道）</text>
+            <view class="card-metrics">
+              <view><text class="metric-value">{{item.areaSqm}}㎡</text><text class="metric-label">面积</text></view>
+              <view><text class="metric-value">{{item.rentCents / 100}}元</text><text class="metric-label">月租</text></view>
+              <view wx:if="{{item.layout}}"><text class="metric-value">{{item.layout}}</text><text class="metric-label">户型</text></view>
+            </view>
+            <view class="reasons">
+              <text class="reason" wx:for="{{item.reasons}}" wx:for-item="reason" wx:key="index">{{reason}}</text>
+            </view>
+          </view>
+        </view>
+      </swiper-item>
+    </swiper>
+
+    <view class="narration" wx:if="{{narration.length > 0}}">
+      <view class="narration-head">
+        <text class="narration-label">小亿解说</text>
+        <text class="narration-progress">{{segmentIndex + 1}} / {{narration.length}}</text>
+      </view>
+      <text class="narration-text">{{currentText}}</text>
+      <view class="narration-actions">
+        <button class="mini-btn" bindtap="onTogglePlay">{{playing ? '暂停' : '继续'}}</button>
+        <button class="mini-btn" bindtap="onNextSegment">下一段</button>
+        <button class="mini-btn primary" bindtap="onContact">联系房东</button>
+      </view>
+    </view>
+  </view>
+
+  <view class="composer">
+    <input
+      class="composer-input"
+      value="{{input}}"
+      placeholder="告诉小亿：区域、预算、面积…"
+      confirm-type="send"
+      bindinput="onInput"
+      bindconfirm="onSend"
+    />
+    <button class="send" bindtap="onSend" disabled="{{loading}}">发送</button>
+  </view>
+
+  <text class="error" wx:if="{{error}}">{{error}}</text>
+
+  <view class="overlay" wx:if="{{showGallery}}" bindtap="onCloseGallery">
+    <view class="overlay-card gallery-card" catchtap="noop">
+      <text class="overlay-title">房屋实景</text>
+      <view class="gallery-image">
+        <text class="gallery-key">{{currentImage || '暂无图片'}}</text>
+      </view>
+      <text class="overlay-hint">图片逐张展示 · 点击空白关闭</text>
+    </view>
+  </view>
+
+  <view class="overlay" wx:if="{{showMap}}" bindtap="onCloseMap">
+    <view class="overlay-card map-card" catchtap="noop">
+      <text class="overlay-title">周边立体地图</text>
+      <map
+        class="mini-map"
+        latitude="{{mapLat}}"
+        longitude="{{mapLng}}"
+        scale="15"
+        enable-3D
+        enable-overlooking
+      />
+      <text class="overlay-hint">地图 3D/俯视 + 周边 POI · 不支持机型自动降级</text>
+    </view>
+  </view>
+
+  <view class="overlay" wx:if="{{showVideo}}" bindtap="onCloseVideo">
+    <view class="overlay-card video-card" catchtap="noop">
+      <text class="overlay-title">房源视频</text>
+      <view class="video-placeholder">视频播放器 M4.1 接入</view>
+      <text class="overlay-hint">当前只验证场景触发，未接 COS 签名 URL</text>
+    </view>
+  </view>
+</view>

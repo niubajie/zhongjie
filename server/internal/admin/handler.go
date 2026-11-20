@@ -27,6 +27,10 @@ func (h *Handler) RegisterAuth(r *gin.RouterGroup) {
 	r.GET("/me", h.me)
 	r.GET("/stats", h.stats)
 	r.GET("/properties", h.properties)
+	r.POST("/properties/:uuid/moderate", h.moderate)
+	r.POST("/auth/totp/setup", h.setupTOTP)
+	r.POST("/auth/totp/enable", h.enableTOTP)
+	r.POST("/auth/totp/disable", h.disableTOTP)
 }
 
 type loginRequest struct {
@@ -81,6 +85,88 @@ func (h *Handler) stats(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, stats)
+}
+
+func (h *Handler) setupTOTP(c *gin.Context) {
+	id := httpx.CurrentAdminID(c)
+	if id == 0 {
+		httpx.Fail(c, http.StatusUnauthorized, httpx.CodeAdminUnauthorized, "请先登录")
+		return
+	}
+	secret, url, err := h.svc.SetupTOTP(c.Request.Context(), id)
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "生成动态验证码失败")
+		return
+	}
+	httpx.OK(c, gin.H{"secret": secret, "otpauthUrl": url})
+}
+
+type totpRequest struct {
+	Code string `json:"code"`
+}
+
+func (h *Handler) enableTOTP(c *gin.Context) {
+	id := httpx.CurrentAdminID(c)
+	var req totpRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	if err := h.svc.EnableTOTP(c.Request.Context(), id, req.Code); err != nil {
+		if errors.Is(err, ErrTOTPInvalid) {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeAdminCredentials, "动态验证码不正确")
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "启用 TOTP 失败")
+		return
+	}
+	httpx.OK(c, gin.H{"enabled": true})
+}
+
+func (h *Handler) disableTOTP(c *gin.Context) {
+	id := httpx.CurrentAdminID(c)
+	var req totpRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	if err := h.svc.DisableTOTP(c.Request.Context(), id, req.Code); err != nil {
+		if errors.Is(err, ErrTOTPInvalid) {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeAdminCredentials, "动态验证码不正确")
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "关闭 TOTP 失败")
+		return
+	}
+	httpx.OK(c, gin.H{"enabled": false})
+}
+
+type moderateRequest struct {
+	Action string `json:"action"`
+	Reason string `json:"reason"`
+}
+
+func (h *Handler) moderate(c *gin.Context) {
+	role := httpx.CurrentAdminRole(c)
+	if role != "super_admin" && role != "operations" && role != "reviewer" {
+		httpx.Fail(c, http.StatusForbidden, httpx.CodeAdminForbidden, "没有审核权限")
+		return
+	}
+	var req moderateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	status, err := h.svc.ModerateProperty(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid"), req.Action, req.Reason)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			httpx.Fail(c, http.StatusNotFound, httpx.CodePropertyNotFound, "房源不存在")
+			return
+		}
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "审核操作失败")
+		return
+	}
+	httpx.OK(c, gin.H{"status": status})
 }
 
 func (h *Handler) properties(c *gin.Context) {

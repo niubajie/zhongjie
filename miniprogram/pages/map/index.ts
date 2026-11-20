@@ -360,11 +360,8 @@ Page<MapPageData, WechatMiniprogram.Page.CustomOption>({
   },
 
   onRobotStart() {
-    this.setData({
-      showRobot: false,
-      robotText: '先看看地图上的房源，点红色标记可以查看详情。',
-    })
-    wx.showToast({ title: '小亿语音将在下一阶段接入', icon: 'none' })
+    this.setData({ showRobot: false })
+    wx.navigateTo({ url: '/pages/assistant/index' })
   },
 
   onRobotClose() {

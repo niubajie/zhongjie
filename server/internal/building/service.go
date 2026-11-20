@@ -34,6 +34,10 @@ func (s *Service) Suggest(ctx context.Context, cityCode, keyword string) ([]Sugg
 	return out, nil
 }
 
+func (s *Service) FindByName(ctx context.Context, cityCode, name string) (Building, error) {
+	return s.repo.FindByName(ctx, strings.TrimSpace(cityCode), strings.TrimSpace(name))
+}
+
 func (s *Service) Get(ctx context.Context, uuid string) (Building, error) {
 	if strings.TrimSpace(uuid) == "" {
 		return Building{}, ErrNotFound
