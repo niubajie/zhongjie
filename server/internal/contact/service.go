@@ -19,6 +19,55 @@ func NewService(repo *Repository, pii *secure.PII) *Service {
 	return &Service{repo: repo, pii: pii}
 }
 
+func (s *Service) GetSettings(ctx context.Context, userID int64) (SettingsView, error) {
+	role, settings, err := s.repo.GetSettings(ctx, userID)
+	if err != nil {
+		return SettingsView{}, err
+	}
+	if role != "landlord" {
+		return SettingsView{}, ErrNotLandlord
+	}
+	wechatID := ""
+	if len(settings.WechatEnc) > 0 {
+		wechatID, err = s.pii.DecryptString(settings.WechatEnc)
+		if err != nil {
+			return SettingsView{}, err
+		}
+	}
+	return SettingsView{
+		PhoneMask:   settings.PhoneMask,
+		WechatID:    wechatID,
+		SharePhone:  settings.SharePhone,
+		ShareWechat: settings.ShareWechat,
+	}, nil
+}
+
+func (s *Service) UpdateSettings(ctx context.Context, userID int64, in SettingsInput) (SettingsView, error) {
+	role, _, err := s.repo.GetSettings(ctx, userID)
+	if err != nil {
+		return SettingsView{}, err
+	}
+	if role != "landlord" {
+		return SettingsView{}, ErrNotLandlord
+	}
+	wechatID := strings.TrimSpace(in.WechatID)
+	if in.ShareWechat && wechatID == "" {
+		return SettingsView{}, ErrWechatRequired
+	}
+	var enc, hash []byte
+	if wechatID != "" {
+		enc, err = s.pii.EncryptString(wechatID)
+		if err != nil {
+			return SettingsView{}, err
+		}
+		hash = s.pii.Hash(strings.ToLower(wechatID))
+	}
+	if err := s.repo.UpdateSettings(ctx, userID, enc, hash, in.SharePhone, in.ShareWechat); err != nil {
+		return SettingsView{}, err
+	}
+	return s.GetSettings(ctx, userID)
+}
+
 func (s *Service) Create(ctx context.Context, tenantID int64, in CreateInput) (Reveal, error) {
 	if !in.Consent {
 		return Reveal{}, ErrConsent

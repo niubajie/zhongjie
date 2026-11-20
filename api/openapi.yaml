@@ -609,6 +609,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+  /v1/landlord/contact-settings:
+    get:
+      tags: [property]
+      summary: 房东联系方式展示设置
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 当前设置
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: {type: integer}
+                  message: {type: string}
+                  data:
+                    type: object
+                    properties:
+                      phoneMask: {type: string}
+                      wechatId: {type: string}
+                      sharePhone: {type: boolean}
+                      shareWechat: {type: boolean}
+    put:
+      tags: [property]
+      summary: 更新房东联系方式展示设置
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sharePhone, shareWechat]
+              properties:
+                wechatId: {type: string}
+                sharePhone: {type: boolean}
+                shareWechat: {type: boolean}
+      responses:
+        "200":
+          description: 已保存
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
   /v1/contact-requests:
     post:
       tags: [property]

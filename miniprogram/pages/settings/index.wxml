@@ -1,0 +1,39 @@
+<view class="settings-page">
+  <view class="head">
+    <text class="title">联系方式设置</text>
+    <text class="sub">只对确认联系的租客展示；可随时关闭。</text>
+  </view>
+
+  <view class="panel">
+    <view class="row">
+      <view>
+        <text class="row-title">手机号</text>
+        <text class="row-sub">{{phoneMask || '未绑定'}}</text>
+      </view>
+      <switch checked="{{sharePhone}}" color="#2563eb" bindchange="onSharePhoneChange" />
+    </view>
+    <text class="hint">关闭后，租客只能看到“房东未授权联系方式”。</text>
+  </view>
+
+  <view class="panel">
+    <view class="row">
+      <view>
+        <text class="row-title">展示微信号</text>
+        <text class="row-sub">微信不会自动给微信号，需要手动填写</text>
+      </view>
+      <switch checked="{{shareWechat}}" color="#2563eb" bindchange="onShareWechatChange" />
+    </view>
+    <input
+      class="field-input"
+      value="{{wechatId}}"
+      placeholder="你的微信号（可选）"
+      bindinput="onWechatInput"
+    />
+  </view>
+
+  <text class="message" wx:if="{{message}}">{{message}}</text>
+  <button class="primary-btn" bindtap="onSave" disabled="{{loading}}">
+    {{loading ? '保存中…' : '保存设置'}}
+  </button>
+  <text class="privacy">确认联系后，租客会看到你授权的手机号/微信号，并写入审计。</text>
+</view>

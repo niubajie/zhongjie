@@ -145,6 +145,13 @@ export interface Tour {
   lng: number
 }
 
+export interface ContactSettings {
+  phoneMask: string
+  wechatId?: string
+  sharePhone: boolean
+  shareWechat: boolean
+}
+
 export interface ContactReveal {
   requestUuid: string
   phone?: string

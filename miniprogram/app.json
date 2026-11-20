@@ -4,7 +4,8 @@
     "pages/property/index",
     "pages/auth/index",
     "pages/publish/index",
-    "pages/assistant/index"
+    "pages/assistant/index",
+    "pages/settings/index"
   ],
   "window": {
     "navigationBarTitleText": "小亿找房",

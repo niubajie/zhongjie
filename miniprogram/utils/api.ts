@@ -5,6 +5,7 @@ import type {
   AuthResult,
   BuildingSuggest,
   ContactReveal,
+  ContactSettings,
   CreatedProperty,
   CreatePropertyInput,
   MapData,
@@ -115,6 +116,17 @@ export function getNarration(propertyUuid: string): Promise<Narration> {
 export function getTour(propertyUuid: string): Promise<Tour> {
   return request<Tour>(`/v1/properties/${encodeURIComponent(propertyUuid)}/tour`, {
     auth: false,
+  })
+}
+
+export function getContactSettings(): Promise<ContactSettings> {
+  return request<ContactSettings>('/v1/landlord/contact-settings')
+}
+
+export function updateContactSettings(input: ContactSettings): Promise<ContactSettings> {
+  return request<ContactSettings>('/v1/landlord/contact-settings', {
+    method: 'PUT',
+    data: input,
   })
 }
 

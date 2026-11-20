@@ -114,6 +114,10 @@ Page<PublishPageData, WechatMiniprogram.Page.CustomOption>({
     this.setData({ description: e.detail.value })
   },
 
+  onSettings() {
+    wx.navigateTo({ url: '/pages/settings/index' })
+  },
+
   onSubmit() {
     if (!this.data.canPublish) {
       return

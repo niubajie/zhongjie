@@ -8,6 +8,21 @@
   margin-bottom: 26rpx;
 }
 
+.head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.settings-link {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 21rpx;
+}
+
 .title {
   display: block;
   font-size: 40rpx;

@@ -18,6 +18,13 @@ type Target struct {
 	StreetName   string
 }
 
+type Settings struct {
+	PhoneMask   string
+	WechatEnc   []byte
+	SharePhone  bool
+	ShareWechat bool
+}
+
 type LandlordContact struct {
 	PhoneEnc    []byte
 	PhoneMask   string
@@ -123,6 +130,41 @@ func (r *Repository) Create(ctx context.Context, tenantID int64, t Target, note 
 		return "", fmt.Errorf("create contact request: %w", err)
 	}
 	return uuid, nil
+}
+
+func (r *Repository) GetSettings(ctx context.Context, userID int64) (string, Settings, error) {
+	var role, phoneMask string
+	var s Settings
+	err := r.pool.QueryRow(ctx, `
+		SELECT u.role, COALESCE(u.phone_mask, ''),
+		       lp.wechat_id_enc, COALESCE(lp.share_phone, true), COALESCE(lp.share_wechat, false)
+		FROM users u
+		LEFT JOIN landlord_profiles lp ON lp.user_id = u.id
+		WHERE u.id = $1 AND u.deleted_at IS NULL
+	`, userID).Scan(&role, &phoneMask, &s.WechatEnc, &s.SharePhone, &s.ShareWechat)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", Settings{}, ErrNotLandlord
+	}
+	if err != nil {
+		return "", Settings{}, fmt.Errorf("get landlord settings: %w", err)
+	}
+	s.PhoneMask = phoneMask
+	return role, s, nil
+}
+
+func (r *Repository) UpdateSettings(ctx context.Context, userID int64, wechatEnc, wechatHash []byte, sharePhone, shareWechat bool) error {
+	if _, err := r.pool.Exec(ctx, `
+		INSERT INTO landlord_profiles (user_id, wechat_id_enc, wechat_id_hash, share_phone, share_wechat)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (user_id) DO UPDATE
+		SET wechat_id_enc = EXCLUDED.wechat_id_enc,
+		    wechat_id_hash = EXCLUDED.wechat_id_hash,
+		    share_phone = EXCLUDED.share_phone,
+		    share_wechat = EXCLUDED.share_wechat
+	`, userID, wechatEnc, wechatHash, sharePhone, shareWechat); err != nil {
+		return fmt.Errorf("update landlord settings: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) EnqueueNotification(ctx context.Context, landlordID int64, payload []byte) error {
