@@ -11,6 +11,7 @@ import (
 	"housing/internal/config"
 	"housing/internal/db"
 	"housing/internal/freshness"
+	"housing/internal/modelgw"
 	"housing/internal/notify"
 	"housing/internal/prospect"
 	"housing/internal/secure"
@@ -41,7 +42,17 @@ func main() {
 	notifyRepo := notify.NewRepository(pool)
 	notifySvc := notify.NewService(notifyRepo, pii, wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret),
 		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage, cfg.NotifyFields)
-	ingestor := prospect.NewDefaultIngestor(prospect.NewRepository(pool), pii, log.Printf)
+	prospectRepo := prospect.NewRepository(pool)
+	ingestor := prospect.NewDefaultIngestor(prospectRepo, pii, log.Printf)
+
+	// 批次 4：LLM 意向评分。仅在配置了 LLM 时启用，失败不影响采集主流程。
+	var scorer *prospect.Scorer
+	if cfg.ModelLLMBaseURL != "" {
+		gw := modelgw.New(modelgw.Config{
+			LLM: modelgw.Provider{BaseURL: cfg.ModelLLMBaseURL, APIKey: cfg.ModelLLMApiKey, Model: cfg.ModelLLMModel},
+		}, pool, nil)
+		scorer = prospect.NewScorer(prospectRepo, gw, pii, log.Printf)
+	}
 
 	runFreshness := func() {
 		n, err := freshRepo.CreateDueChecks(context.Background())
@@ -75,6 +86,16 @@ func main() {
 		if stats.Fetched > 0 || stats.Ingested > 0 || stats.Failed > 0 {
 			log.Printf("prospect run: sources=%d fetched=%d ingested=%d duplicate=%d optedOut=%d invalid=%d failed=%d",
 				stats.Sources, stats.Fetched, stats.Ingested, stats.Duplicate, stats.OptedOut, stats.Invalid, stats.Failed)
+		}
+		if scorer != nil {
+			ss, err := scorer.ScoreBatch(context.Background(), 50)
+			if err != nil {
+				log.Printf("prospect scoring failed: %v", err)
+				return
+			}
+			if ss.Total > 0 {
+				log.Printf("prospect scoring: total=%d queued=%d ignored=%d failed=%d", ss.Total, ss.Queued, ss.Ignored, ss.Failed)
+			}
 		}
 	}
 

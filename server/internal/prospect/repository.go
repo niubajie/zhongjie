@@ -434,3 +434,49 @@ func (r *Repository) ListRecentSelfOwned(ctx context.Context, limit int) ([]RawP
 	}
 	return out, rows.Err()
 }
+
+// ---- 批次 4：意向评分 ----
+
+// ListUnscoredLeads 取出待评分的线索（status=new 且 intent_status=unknown）。
+func (r *Repository) ListUnscoredLeads(ctx context.Context, limit int) ([]UnscoredLead, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT uuid::text, lead_type, raw_text_enc, contact_channel,
+		       COALESCE(city_code, ''), COALESCE(district_code, ''),
+		       COALESCE(budget_cents, 0), COALESCE(area_sqm, 0), COALESCE(layout, ''),
+		       `+fmt.Sprintf(tsFmt, "created_at")+`
+		FROM prospect_leads
+		WHERE status = 'new' AND intent_status = 'unknown' AND deleted_at IS NULL
+		ORDER BY id
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unscored leads: %w", err)
+	}
+	defer rows.Close()
+	out := []UnscoredLead{}
+	for rows.Next() {
+		var l UnscoredLead
+		if err := rows.Scan(&l.UUID, &l.LeadType, &l.RawTextEnc, &l.ContactChannel,
+			&l.CityCode, &l.DistrictCode, &l.BudgetCents, &l.AreaSqm, &l.Layout, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// UpdateLeadIntent 写入 LLM 分类与评分结果，并按分流结论更新 status。
+func (r *Repository) UpdateLeadIntent(ctx context.Context, uuid, intentStatus, status string, score int) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE prospect_leads
+		SET intent_status = $2, intent_score = $3, status = $4, updated_at = now()
+		WHERE uuid = $1 AND deleted_at IS NULL
+	`, uuid, intentStatus, score, status)
+	if err != nil {
+		return fmt.Errorf("update lead intent: %w", err)
+	}
+	return nil
+}

@@ -53,6 +53,24 @@ const (
 	IntentUnknown         = "unknown"
 )
 
+// ReviewScoreThreshold 意向分阈值（F5）：>= 该值且意向有效才进人工复核队列。
+const ReviewScoreThreshold = 70
+
+// UnscoredLead 待评分线索：status=new 且 intent_status=unknown。
+// RawTextEnc 为密文，评分前由 Scorer 解密（只在内存出现明文）。
+type UnscoredLead struct {
+	UUID           string
+	LeadType       string
+	RawTextEnc     []byte
+	ContactChannel string
+	CityCode       string
+	DistrictCode   string
+	BudgetCents    int64
+	AreaSqm        float64
+	Layout         string
+	CreatedAt      string
+}
+
 // 联系渠道与方向（首条联系 100% 人工审核）
 const (
 	ChannelInApp   = "in_app"
