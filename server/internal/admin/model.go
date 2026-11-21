@@ -67,6 +67,17 @@ type BuildingRow struct {
 	Lng          float64 `json:"lng"`
 }
 
+type CreateBuildingInput struct {
+	Name         string  `json:"name"`
+	DistrictCode string  `json:"districtCode"`
+	DistrictName string  `json:"districtName"`
+	StreetCode   string  `json:"streetCode"`
+	StreetName   string  `json:"streetName"`
+	BuildingType string  `json:"buildingType"`
+	Lat          float64 `json:"lat"`
+	Lng          float64 `json:"lng"`
+}
+
 type ContactRow struct {
 	UUID            string `json:"uuid"`
 	TenantSurname   string `json:"tenantSurname"`

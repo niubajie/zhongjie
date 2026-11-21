@@ -18,6 +18,7 @@ var (
 	ErrTOTPRequired       = errors.New("需要动态验证码")
 	ErrTOTPInvalid        = errors.New("动态验证码不正确")
 	ErrInvalidStatus      = errors.New("房源状态不正确")
+	ErrInvalidBuilding    = errors.New("楼宇名称、区域、类型或坐标不正确")
 )
 
 type Service struct {
@@ -182,6 +183,30 @@ func (s *Service) ListImports(ctx context.Context, limit int) ([]ImportJobRow, e
 		limit = 50
 	}
 	return s.repo.ListImports(ctx, limit)
+}
+
+func (s *Service) CreateBuilding(ctx context.Context, adminID int64, in CreateBuildingInput) (BuildingRow, error) {
+	in.Name = strings.TrimSpace(in.Name)
+	in.DistrictCode = strings.TrimSpace(in.DistrictCode)
+	in.DistrictName = strings.TrimSpace(in.DistrictName)
+	in.StreetCode = strings.TrimSpace(in.StreetCode)
+	in.StreetName = strings.TrimSpace(in.StreetName)
+	if in.Name == "" || in.DistrictCode == "" || in.DistrictName == "" ||
+		in.StreetCode == "" || in.StreetName == "" {
+		return BuildingRow{}, ErrInvalidBuilding
+	}
+	if in.BuildingType != "industrial_park" && in.BuildingType != "office_building" {
+		return BuildingRow{}, ErrInvalidBuilding
+	}
+	if in.Lat < 3 || in.Lat > 54 || in.Lng < 73 || in.Lng > 136 {
+		return BuildingRow{}, ErrInvalidBuilding
+	}
+	row, err := s.repo.CreateBuilding(ctx, in)
+	if err != nil {
+		return BuildingRow{}, err
+	}
+	s.audit(ctx, adminID, "building_create", "building", row.UUID)
+	return row, nil
 }
 
 func (s *Service) ListBuildings(ctx context.Context, limit int) ([]BuildingRow, error) {

@@ -214,6 +214,26 @@ func (r *Repository) ListBuildings(ctx context.Context, limit int) ([]BuildingRo
 	return out, rows.Err()
 }
 
+func (r *Repository) CreateBuilding(ctx context.Context, in CreateBuildingInput) (BuildingRow, error) {
+	var row BuildingRow
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO buildings (
+			city_code, district_code, district_name, street_code, street_name,
+			name, building_type, lat, lng, source, review_status
+		)
+		VALUES ('440300', $1, $2, $3, $4, $5, $6, $7, $8, 'manual', 'approved')
+		RETURNING uuid::text, name, district_name, street_name, building_type, review_status,
+		          lat::float8, lng::float8
+	`, in.DistrictCode, in.DistrictName, in.StreetCode, in.StreetName,
+		in.Name, in.BuildingType, in.Lat, in.Lng).Scan(
+		&row.UUID, &row.Name, &row.DistrictName, &row.StreetName,
+		&row.BuildingType, &row.ReviewStatus, &row.Lat, &row.Lng)
+	if err != nil {
+		return BuildingRow{}, fmt.Errorf("create building: %w", err)
+	}
+	return row, nil
+}
+
 func (r *Repository) ListContacts(ctx context.Context, limit int) ([]ContactRow, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT cr.uuid::text, COALESCE(u.surname, ''), COALESCE(u.phone_mask, ''),

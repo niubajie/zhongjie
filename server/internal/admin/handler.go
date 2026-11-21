@@ -30,6 +30,7 @@ func (h *Handler) RegisterAuth(r *gin.RouterGroup) {
 	r.POST("/properties/:uuid/moderate", h.moderate)
 	r.GET("/imports", h.imports)
 	r.GET("/buildings", h.buildings)
+	r.POST("/buildings", h.createBuilding)
 	r.GET("/contacts", h.contacts)
 	r.GET("/freshness", h.freshness)
 	r.POST("/auth/totp/setup", h.setupTOTP)
@@ -189,6 +190,29 @@ func (h *Handler) buildings(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *Handler) createBuilding(c *gin.Context) {
+	role := httpx.CurrentAdminRole(c)
+	if role != "super_admin" && role != "operations" {
+		httpx.Fail(c, http.StatusForbidden, httpx.CodeAdminForbidden, "没有楼宇维护权限")
+		return
+	}
+	var in CreateBuildingInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	row, err := h.svc.CreateBuilding(c.Request.Context(), httpx.CurrentAdminID(c), in)
+	if err != nil {
+		if errors.Is(err, ErrInvalidBuilding) {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "创建楼宇失败")
+		return
+	}
+	httpx.Created(c, row)
 }
 
 func (h *Handler) contacts(c *gin.Context) {
