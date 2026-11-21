@@ -435,6 +435,13 @@
   color: #475569;
 }
 
+.gallery-photo {
+  width: 100%;
+  height: 360rpx;
+  display: block;
+  border-radius: 18rpx;
+}
+
 .overlay-hint {
   display: block;
   margin-top: 12rpx;
@@ -458,4 +465,10 @@
   align-items: center;
   justify-content: center;
   font-size: 24rpx;
+}
+
+.video-player {
+  width: 100%;
+  height: 340rpx;
+  border-radius: 18rpx;
 }

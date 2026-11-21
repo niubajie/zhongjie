@@ -54,6 +54,8 @@ type voiceEvent struct {
 	Hint   string         `json:"hint,omitempty"`
 	Slots  map[string]any `json:"slots,omitempty"`
 	Status string         `json:"status,omitempty"`
+	Action string         `json:"action,omitempty"`
+	Ready  bool           `json:"ready,omitempty"`
 }
 
 func (h *Handler) RegisterVoice(r *gin.RouterGroup) {
@@ -261,7 +263,7 @@ func (h *Handler) runTurn(ctx context.Context, sessionID string, audio []byte, w
 		writer.send(voiceEvent{Type: "error", Status: "assistant_failed", Hint: "小亿暂时没反应过来"})
 		return
 	}
-	writer.send(voiceEvent{Type: "reply", Text: reply.Reply, Slots: reply.Slots})
+	writer.send(voiceEvent{Type: "reply", Text: reply.Reply, Slots: reply.Slots, Action: reply.Action, Ready: reply.Ready})
 	for i, sentence := range splitSentences(reply.Reply, 6) {
 		if ctx.Err() != nil {
 			return

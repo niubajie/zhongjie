@@ -86,10 +86,17 @@
   <view class="overlay" wx:if="{{showGallery}}" bindtap="onCloseGallery">
     <view class="overlay-card gallery-card" catchtap="noop">
       <text class="overlay-title">房屋实景</text>
-      <view class="gallery-image">
-        <text class="gallery-key">{{currentImage || '暂无图片'}}</text>
+      <view class="gallery-image" catchtap="onPreviewImage">
+        <image
+          wx:if="{{currentImage}}"
+          class="gallery-photo"
+          src="{{currentImage}}"
+          mode="aspectFill"
+          binderror="onGalleryImageError"
+        />
+        <text wx:else class="gallery-key">暂无图片</text>
       </view>
-      <text class="overlay-hint">图片逐张展示 · 点击空白关闭</text>
+      <text class="overlay-hint">共 {{imageCount}} 张 · 点击图片放大，点击空白关闭</text>
     </view>
   </view>
 
@@ -111,8 +118,16 @@
   <view class="overlay" wx:if="{{showVideo}}" bindtap="onCloseVideo">
     <view class="overlay-card video-card" catchtap="noop">
       <text class="overlay-title">房源视频</text>
-      <view class="video-placeholder">视频播放器 M4.1 接入</view>
-      <text class="overlay-hint">当前只验证场景触发，未接 COS 签名 URL</text>
+      <video
+        wx:if="{{videoUrl}}"
+        class="video-player"
+        src="{{videoUrl}}"
+        poster="{{videoCover}}"
+        controls
+        object-fit="cover"
+      ></video>
+      <view wx:else class="video-placeholder">暂无房源视频</view>
+      <text class="overlay-hint">{{videoUrl ? '房源视频 · 点击空白关闭' : '房源视频审核通过后在此播放'}}</text>
     </view>
   </view>
 </view>
