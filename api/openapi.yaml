@@ -1,12 +1,13 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.7.0
+  version: 0.8.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
     docx/xlsx 导入、管理站文字/图片/视频录入并匹配房东、管理站审核/审计/统计。
-    自主获客（3.12/3.13）与 PC 微信自动化（3.11）尚未实现，待后续版本补齐。
+    自主获客（3.12/3.13）已开始落地：批次 1 数据模型与管理站骨架（信息源 / 线索列表）已就绪，
+    采集、LLM 评分、人工复核联系、跟进状态机在后续批次补齐；PC 微信自动化（3.11）尚未实现。
 servers:
   - url: http://localhost:8080
     description: local
@@ -20,6 +21,7 @@ tags:
   - name: voice
   - name: admin
   - name: intake
+  - name: prospect
 paths:
   /healthz:
     get:
@@ -1048,6 +1050,141 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreatedPropertyEnvelope"
+  /v1/admin/lead-sources:
+    get:
+      tags: [prospect]
+      summary: 信息源列表（批次1）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 信息源列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadSourceListEnvelope"
+    post:
+      tags: [prospect]
+      summary: 新增信息源（批次1）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeadSourceInput"
+      responses:
+        "201":
+          description: 新增结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadSourceEnvelope"
+  /v1/admin/lead-sources/{uuid}/enabled:
+    patch:
+      tags: [prospect]
+      summary: 启停单个信息源（批次1，单源停机开关）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        "200":
+          description: 操作结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/prospects:
+    get:
+      tags: [prospect]
+      summary: 潜在线索列表（批次1，支持 leadType / status 筛选）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: leadType
+          in: query
+          schema: {type: string, enum: [tenant, landlord]}
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, reviewed, contacted, following_up, converted, published, cold, lost, opt_out, rejected, ignored]
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 线索列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadListEnvelope"
+  /v1/admin/prospects/{uuid}:
+    get:
+      tags: [prospect]
+      summary: 线索详情（批次1，不含原文密文；批次5 补解密展示）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 线索详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadEnvelope"
+  /v1/admin/prospects/kill-switch:
+    get:
+      tags: [prospect]
+      summary: 查询全局停机开关状态（批次2 实现）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 停机状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KillSwitchEnvelope"
+    put:
+      tags: [prospect]
+      summary: 切换全局停机开关（批次2 实现）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [halted]
+              properties:
+                halted: {type: boolean}
+      responses:
+        "200":
+          description: 切换结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KillSwitchEnvelope"
 components:
   securitySchemes:
     bearerAuth:
@@ -1827,3 +1964,101 @@ components:
         title: {type: string}
         description: {type: string}
         imageKeys: {type: array, items: {type: string}}
+    CreateLeadSourceInput:
+      type: object
+      required: [name, kind]
+      properties:
+        name: {type: string}
+        kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
+        baseUrl: {type: string}
+        rateLimitMs: {type: integer, minimum: 0}
+        reviewNote: {type: string}
+    LeadSource:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        name: {type: string}
+        kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
+        baseUrl: {type: string}
+        robotsOk: {type: boolean}
+        termsOk: {type: boolean}
+        rateLimitMs: {type: integer}
+        enabled: {type: boolean}
+        reviewNote: {type: string}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+    LeadSourceListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadSource"
+    LeadSourceListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/LeadSourceListData"
+    LeadSourceEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/LeadSource"
+    ProspectLead:
+      type: object
+      description: 对外线索视图，不含原文密文与联系方式明文
+      properties:
+        uuid: {type: string, format: uuid}
+        sourceName: {type: string}
+        leadType: {type: string, enum: [tenant, landlord]}
+        platform: {type: string}
+        contactChannel: {type: string, enum: [phone, wechat, in_app, sms, unknown]}
+        cityCode: {type: string}
+        districtCode: {type: string}
+        budgetCents: {type: integer}
+        areaSqm: {type: number}
+        layout: {type: string}
+        intentScore: {type: integer}
+        intentStatus: {type: string, enum: [seeking, rented, landlord_listing, agent, irrelevant, unknown]}
+        status:
+          type: string
+          enum: [new, reviewed, contacted, following_up, converted, published, cold, lost, opt_out, rejected, ignored]
+        matchedPropertyId: {type: string, format: uuid}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+    ProspectLeadListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectLead"
+    ProspectLeadListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectLeadListData"
+    ProspectLeadEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectLead"
+    KillSwitchState:
+      type: object
+      properties:
+        halted: {type: boolean}
+    KillSwitchEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/KillSwitchState"

@@ -25,6 +25,7 @@ import (
 	"housing/internal/intake"
 	"housing/internal/modelgw"
 	"housing/internal/property"
+	"housing/internal/prospect"
 	"housing/internal/secure"
 	"housing/internal/storage"
 	"housing/internal/user"
@@ -131,6 +132,10 @@ func main() {
 	adminSvc := admin.NewService(adminRepo, pii, adminTokens)
 	adminHandler := admin.NewHandler(adminSvc)
 
+	prospectRepo := prospect.NewRepository(pool)
+	prospectSvc := prospect.NewService(prospectRepo)
+	prospectHandler := prospect.NewHandler(prospectSvc)
+
 	router := httpapi.NewRouter(cfg, log, tokens, adminTokens, httpapi.Handlers{
 		User:            userHandler,
 		Property:        propertyHandler,
@@ -142,6 +147,7 @@ func main() {
 		Import:          importHandler,
 		Intake:          intakeHandler,
 		Admin:           adminHandler,
+		Prospect:        prospectHandler,
 		Media:           mediaSvc,
 		AllowLocalMedia: cfg.Env == "dev",
 	})
