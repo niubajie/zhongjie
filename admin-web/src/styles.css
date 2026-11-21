@@ -579,8 +579,104 @@ th {
   font: inherit;
 }
 
+.sub-head {
+  margin-top: 26px;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.draft-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.draft-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.draft-fields input,
+.draft-fields select {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  font: inherit;
+}
+
+.community-field {
+  position: relative;
+  grid-column: 1 / -1;
+}
+
+.community-field input {
+  width: 100%;
+}
+
+.community-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+  overflow: hidden;
+}
+
+.community-suggest button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.community-suggest button:hover {
+  background: #f1f5f9;
+}
+
+.community-new {
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.community-new summary {
+  cursor: pointer;
+  color: #2563eb;
+}
+
+.community-new .draft-fields {
+  margin: 10px 0;
+}
+
+.draft-actions {
+  display: flex;
+  gap: 10px;
+}
+
 @media (max-width: 900px) {
   .intake-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .draft-fields {
     grid-template-columns: 1fr;
   }
 }

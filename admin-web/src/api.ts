@@ -53,6 +53,35 @@ export interface AdminContact {
   createdAt: string
 }
 
+export interface AdminContactDetail extends AdminContact {
+  note?: string
+}
+
+export interface AdminAuditLog {
+  id: number
+  actorType: string
+  action: string
+  targetType: string
+  targetId?: string
+  createdAt: string
+}
+
+export interface AdminIntakeDraft {
+  uuid: string
+  inputType: string
+  status: string
+  matchStatus: string
+  communityName?: string
+  landlordId?: string
+  propertyId?: string
+  confidence: number
+  errorMessage?: string
+  areaSqm: number
+  rentYuan: number
+  title?: string
+  createdAt: string
+}
+
 export interface AdminFreshness {
   id: number
   propertyUuid: string
@@ -84,7 +113,7 @@ const apiBase = (import.meta.env.VITE_API_BASE as string | undefined) ?? 'http:/
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers)
   headers.set('Accept', 'application/json')
-  if (init.body) {
+  if (init.body && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json')
   }
   if (token) {
@@ -122,8 +151,113 @@ export interface IntakeResult {
   propertyId?: string
   status: string
   landlordId?: string
+  communityName?: string
   buildingName?: string
   message?: string
+}
+
+export interface IntakeExtracted {
+  communityName?: string
+  areaSqm?: number
+  rentYuan?: number
+  layout?: string
+  title?: string
+}
+
+export interface AdminIntakeMedia {
+  jobId: string
+  status: string
+  matchStatus: string
+  mediaUrls: string[]
+  extracted: IntakeExtracted
+  maskedPhone?: string
+  landlordId?: string
+  confidence: number
+  message?: string
+  ocrText?: string
+}
+
+export async function adminIntakeMedia(token: string, file: File): Promise<AdminIntakeMedia> {
+  const body = new FormData()
+  body.append('file', file)
+  return request<AdminIntakeMedia>('/v1/admin/rentals/intake/media', { method: 'POST', body }, token)
+}
+
+export async function publishIntake(
+  token: string,
+  jobId: string,
+  input: {
+    communityUuid?: string
+    communityName?: string
+    areaSqm: number
+    rentCents: number
+    title?: string
+    layout?: string
+    landlordId?: string
+  },
+): Promise<IntakeResult> {
+  return request<IntakeResult>(
+    `/v1/admin/rentals/intake/${encodeURIComponent(jobId)}/publish`,
+    { method: 'POST', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function matchIntakeLandlord(
+  token: string,
+  jobId: string,
+  landlordId: string,
+  reason: string,
+): Promise<boolean> {
+  const data = await request<{ matched: boolean }>(
+    `/v1/admin/rentals/intake/${encodeURIComponent(jobId)}/match`,
+    { method: 'POST', body: JSON.stringify({ landlordId, reason }) },
+    token,
+  )
+  return data.matched
+}
+
+export interface CommunitySuggestion {
+  uuid: string
+  name: string
+  districtCode: string
+  districtName: string
+  streetCode: string
+  streetName: string
+  communityType: string
+  lat: number
+  lng: number
+}
+
+export async function suggestCommunities(
+  keyword: string,
+  cityCode = '440300',
+): Promise<CommunitySuggestion[]> {
+  const data = await request<{ items: CommunitySuggestion[] }>(
+    `/v1/communities/suggest?cityCode=${encodeURIComponent(cityCode)}&keyword=${encodeURIComponent(keyword)}`,
+  )
+  return data.items
+}
+
+export async function createCommunity(
+  token: string,
+  input: {
+    cityCode: string
+    districtCode: string
+    districtName: string
+    streetCode: string
+    streetName: string
+    name: string
+    communityType: 'residential' | 'apartment'
+    lat: number
+    lng: number
+  },
+): Promise<{ uuid: string; name: string }> {
+  return request<{ uuid: string; name: string }>(
+    '/v1/admin/communities',
+    { method: 'POST', body: JSON.stringify(input) },
+    token,
+  )
 }
 
 export async function adminIntakeText(
@@ -181,6 +315,36 @@ export async function fetchAdminBuildings(token: string, limit = 200): Promise<A
 export async function fetchAdminContacts(token: string, limit = 50): Promise<AdminContact[]> {
   const data = await request<{ items: AdminContact[] }>(`/v1/admin/contacts?limit=${limit}`, {}, token)
   return data.items
+}
+
+export async function fetchAdminContactDetail(token: string, uuid: string): Promise<AdminContactDetail> {
+  return request<AdminContactDetail>(`/v1/admin/contacts/${encodeURIComponent(uuid)}`, {}, token)
+}
+
+export async function fetchAdminAuditLogs(token: string, limit = 100): Promise<AdminAuditLog[]> {
+  const data = await request<{ items: AdminAuditLog[] }>(`/v1/admin/audit-logs?limit=${limit}`, {}, token)
+  return data.items
+}
+
+export async function fetchAdminIntakeDrafts(token: string, limit = 50): Promise<AdminIntakeDraft[]> {
+  const data = await request<{ items: AdminIntakeDraft[] }>(`/v1/admin/rentals/intake?limit=${limit}`, {}, token)
+  return data.items
+}
+
+export async function fetchAdminIntakeDetail(token: string, jobId: string): Promise<AdminIntakeMedia> {
+  return request<AdminIntakeMedia>(
+    `/v1/admin/rentals/intake/${encodeURIComponent(jobId)}`,
+    {},
+    token,
+  )
+}
+
+export async function retryAdminIntake(token: string, jobId: string): Promise<AdminIntakeMedia> {
+  return request<AdminIntakeMedia>(
+    `/v1/admin/rentals/intake/${encodeURIComponent(jobId)}/retry`,
+    { method: 'POST', body: '{}' },
+    token,
+  )
 }
 
 export async function fetchAdminFreshness(token: string, limit = 50): Promise<AdminFreshness[]> {

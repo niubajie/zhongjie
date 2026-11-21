@@ -1,23 +1,38 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
+  adminIntakeMedia,
   adminIntakeText,
   adminLogin,
+  createCommunity,
+  matchIntakeLandlord,
+  publishIntake,
   enableTOTP,
+  fetchAdminAuditLogs,
   fetchAdminBuildings,
+  fetchAdminContactDetail,
   fetchAdminContacts,
   fetchAdminFreshness,
   fetchAdminImports,
+  fetchAdminIntakeDetail,
+  fetchAdminIntakeDrafts,
   fetchAdminProperties,
   fetchAdminStats,
   moderateProperty,
+  retryAdminIntake,
   setupTOTP,
+  suggestCommunities,
+  type AdminAuditLog,
   type AdminBuilding,
   type AdminContact,
+  type AdminContactDetail,
   type AdminFreshness,
   type AdminImportJob,
+  type AdminIntakeDraft,
+  type AdminIntakeMedia,
   type AdminLoginResult,
   type AdminProperty,
   type AdminStats,
+  type CommunitySuggestion,
 } from './api'
 
 type Session = Pick<AdminLoginResult, 'token' | 'admin'>
@@ -105,6 +120,35 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   const [buildings, setBuildings] = useState<AdminBuilding[]>([])
   const [contacts, setContacts] = useState<AdminContact[]>([])
   const [freshness, setFreshness] = useState<AdminFreshness[]>([])
+  const [drafts, setDrafts] = useState<AdminIntakeDraft[]>([])
+  const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([])
+  const [contactDetail, setContactDetail] = useState<AdminContactDetail | null>(null)
+  const [communityOptions, setCommunityOptions] = useState<CommunitySuggestion[]>([])
+  const [communityMessage, setCommunityMessage] = useState('')
+  const [newCommunity, setNewCommunity] = useState({
+    name: '',
+    districtCode: '440305',
+    districtName: '南山区',
+    streetCode: '440305006',
+    streetName: '粤海街道',
+    communityType: 'residential' as 'residential' | 'apartment',
+    lat: '',
+    lng: '',
+  })
+  const [mediaFile, setMediaFile] = useState<File | null>(null)
+  const [mediaResult, setMediaResult] = useState<AdminIntakeMedia | null>(null)
+  const [mediaLoading, setMediaLoading] = useState(false)
+  const [mediaMessage, setMediaMessage] = useState('')
+  const [draft, setDraft] = useState({
+    landlordId: '',
+    communityUuid: '',
+    communityName: '',
+    areaSqm: '',
+    rentCents: '',
+    title: '',
+    layout: '',
+    matchReason: '房东授权补充',
+  })
 
   useEffect(() => {
     let cancelled = false
@@ -116,18 +160,33 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       fetchAdminBuildings(session.token),
       fetchAdminContacts(session.token),
       fetchAdminFreshness(session.token),
+      fetchAdminIntakeDrafts(session.token),
+      fetchAdminAuditLogs(session.token),
     ])
-      .then(([nextStats, nextProperties, nextImports, nextBuildings, nextContacts, nextFreshness]) => {
-        if (!cancelled) {
-          setStats(nextStats)
-          setProperties(nextProperties)
-          setImports(nextImports)
-          setBuildings(nextBuildings)
-          setContacts(nextContacts)
-          setFreshness(nextFreshness)
-          setError('')
-        }
-      })
+      .then(
+        ([
+          nextStats,
+          nextProperties,
+          nextImports,
+          nextBuildings,
+          nextContacts,
+          nextFreshness,
+          nextDrafts,
+          nextAuditLogs,
+        ]) => {
+          if (!cancelled) {
+            setStats(nextStats)
+            setProperties(nextProperties)
+            setImports(nextImports)
+            setBuildings(nextBuildings)
+            setContacts(nextContacts)
+            setFreshness(nextFreshness)
+            setDrafts(nextDrafts)
+            setAuditLogs(nextAuditLogs)
+            setError('')
+          }
+        },
+      )
       .catch((err: Error) => {
         if (!cancelled) {
           setError(err.message || '数据加载失败')
@@ -168,6 +227,172 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       .then((next) => setProperties(next))
       .catch((err: Error) => setIntakeMessage(err.message || '录入失败'))
       .finally(() => setIntakeLoading(false))
+  }
+
+  function applyMediaResult(result: AdminIntakeMedia) {
+    setMediaResult(result)
+    setDraft({
+      landlordId: result.landlordId ?? '',
+      communityUuid: '',
+      communityName: result.extracted.communityName ?? '',
+      areaSqm: result.extracted.areaSqm ? String(result.extracted.areaSqm) : '',
+      rentCents: result.extracted.rentYuan ? String(result.extracted.rentYuan) : '',
+      title: result.extracted.title ?? '',
+      layout: result.extracted.layout ?? '',
+      matchReason: '房东授权补充',
+    })
+  }
+
+  function submitMedia() {
+    if (!mediaFile) {
+      setMediaMessage('请先选择图片、视频或文档')
+      return
+    }
+    setMediaLoading(true)
+    setMediaMessage('')
+    adminIntakeMedia(session.token, mediaFile)
+      .then((result) => {
+        applyMediaResult(result)
+        setMediaMessage(result.message || `识别完成，状态 ${result.status}`)
+        return refreshDrafts()
+      })
+      .catch((err: Error) => setMediaMessage(err.message || '上传失败'))
+      .finally(() => setMediaLoading(false))
+  }
+
+  function refreshDrafts() {
+    return fetchAdminIntakeDrafts(session.token).then((next) => setDrafts(next))
+  }
+
+  function openDraft(item: AdminIntakeDraft) {
+    setMediaLoading(true)
+    setMediaMessage('')
+    fetchAdminIntakeDetail(session.token, item.uuid)
+      .then((result) => {
+        applyMediaResult(result)
+        setMediaMessage(`已载入草稿 ${item.uuid}`)
+      })
+      .catch((err: Error) => setMediaMessage(err.message || '草稿加载失败'))
+      .finally(() => setMediaLoading(false))
+  }
+
+  function retryDraft(item: AdminIntakeDraft) {
+    setMediaLoading(true)
+    setMediaMessage('')
+    retryAdminIntake(session.token, item.uuid)
+      .then((result) => {
+        applyMediaResult(result)
+        setMediaMessage(result.message || `已重试，状态 ${result.status}`)
+        return refreshDrafts()
+      })
+      .catch((err: Error) => setMediaMessage(err.message || '重试失败'))
+      .finally(() => setMediaLoading(false))
+  }
+
+  function onCommunityNameChange(value: string) {
+    setDraft({ ...draft, communityName: value, communityUuid: '' })
+    setCommunityMessage('')
+    const keyword = value.trim()
+    if (keyword.length < 2) {
+      setCommunityOptions([])
+      return
+    }
+    suggestCommunities(keyword)
+      .then(setCommunityOptions)
+      .catch(() => setCommunityOptions([]))
+  }
+
+  function pickCommunity(item: CommunitySuggestion) {
+    setDraft({ ...draft, communityUuid: item.uuid, communityName: item.name })
+    setCommunityOptions([])
+    setCommunityMessage(`已选择 ${item.name}（${item.districtName} · ${item.streetName}）`)
+  }
+
+  function submitNewCommunity() {
+    const name = newCommunity.name.trim()
+    const lat = Number(newCommunity.lat)
+    const lng = Number(newCommunity.lng)
+    if (!name) {
+      setCommunityMessage('请填写小区名称')
+      return
+    }
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat === 0 || lng === 0) {
+      setCommunityMessage('请填写有效经纬度，例如 22.5178 / 113.9356')
+      return
+    }
+    setCommunityMessage('')
+    createCommunity(session.token, {
+      cityCode: '440300',
+      districtCode: newCommunity.districtCode.trim(),
+      districtName: newCommunity.districtName.trim(),
+      streetCode: newCommunity.streetCode.trim(),
+      streetName: newCommunity.streetName.trim(),
+      name,
+      communityType: newCommunity.communityType,
+      lat,
+      lng,
+    })
+      .then((created) => {
+        setDraft({ ...draft, communityUuid: created.uuid, communityName: created.name })
+        setNewCommunity({ ...newCommunity, name: '', lat: '', lng: '' })
+        setCommunityOptions([])
+        setCommunityMessage(`已创建小区 ${created.name}，可直接发布`)
+      })
+      .catch((err: Error) => setCommunityMessage(err.message || '创建小区失败'))
+  }
+
+  function showContactDetail(contact: AdminContact) {
+    setContactDetail(null)
+    fetchAdminContactDetail(session.token, contact.uuid)
+      .then(setContactDetail)
+      .catch((err: Error) => setError(err.message || '联系记录加载失败'))
+  }
+
+  function bindLandlord() {
+    if (!mediaResult) return
+    if (!draft.landlordId.trim()) {
+      setMediaMessage('请填写房东 UUID')
+      return
+    }
+    matchIntakeLandlord(session.token, mediaResult.jobId, draft.landlordId.trim(), draft.matchReason)
+      .then(() => setMediaMessage('房东已绑定'))
+      .catch((err: Error) => setMediaMessage(err.message || '绑定失败'))
+  }
+
+  function publishDraft() {
+    if (!mediaResult) return
+    const area = Number(draft.areaSqm)
+    const rentYuan = Number(draft.rentCents)
+    if (!Number.isFinite(area) || area <= 0 || !Number.isFinite(rentYuan) || rentYuan <= 0) {
+      setMediaMessage('请填写有效面积和月租')
+      return
+    }
+    if (!draft.landlordId.trim()) {
+      setMediaMessage('请先绑定房东')
+      return
+    }
+    setMediaLoading(true)
+    publishIntake(session.token, mediaResult.jobId, {
+      communityUuid: draft.communityUuid.trim() || undefined,
+      communityName: draft.communityName.trim() || undefined,
+      areaSqm: area,
+      rentCents: Math.round(rentYuan * 100),
+      title: draft.title.trim(),
+      layout: draft.layout.trim(),
+      landlordId: draft.landlordId.trim(),
+    })
+      .then((result) => {
+        setMediaMessage(`已发布，房源 ${result.propertyId || ''}，状态 ${result.status}`)
+        setMediaResult(null)
+        setMediaFile(null)
+        return fetchAdminProperties(session.token)
+      })
+      .then((next) => {
+        setProperties(next)
+        return refreshDrafts()
+      })
+      .catch((err: Error) => setMediaMessage(err.message || '发布失败'))
+      .finally(() => setMediaLoading(false))
   }
 
   function beginTOTP() {
@@ -239,12 +464,12 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
 
         <section className="panel" id="intake">
           <h2>管理站租房录入</h2>
-          <p className="muted">粘贴房源文字，填写房东手机号；系统自动解析楼宇/面积/租金并匹配房东。</p>
+          <p className="muted">粘贴房源文字或上传图片/视频/文档；系统自动解析小区、面积、租金并匹配房东。</p>
           <div className="intake-grid">
             <textarea
               value={intakeText}
               onChange={(e) => setIntakeText(e.target.value)}
-              placeholder={'楼宇：科兴科学园\n面积：110\n租金：20000\n户型：3+1'}
+              placeholder={'小区：海岸城花园\n面积：89\n租金：7800\n户型：3室2厅\n电话：13800000001'}
             />
             <div className="intake-side">
               <input
@@ -258,6 +483,248 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
               </button>
               {intakeMessage && <p className="muted">{intakeMessage}</p>}
             </div>
+          </div>
+
+          <h3 className="sub-head">图片 / 视频 / 文档录入</h3>
+          <div className="intake-grid">
+            <div className="intake-side">
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,.docx,.txt,.md"
+                onChange={(e) => setMediaFile(e.target.files?.[0] ?? null)}
+              />
+              <p className="muted">支持 jpg/png/webp、mp4/mov，以及 docx/txt/md（PDF 与旧版 .doc 暂不支持）。</p>
+              <button className="btn primary" onClick={submitMedia} disabled={mediaLoading}>
+                {mediaLoading ? '识别中…' : '上传并识别'}
+              </button>
+              {mediaMessage && <p className="muted">{mediaMessage}</p>}
+            </div>
+            {mediaResult && (
+              <div className="draft-card">
+                <p className="muted">
+                  状态 {mediaResult.status} · 匹配 {mediaResult.matchStatus}
+                  {mediaResult.maskedPhone ? ` · 电话 ${mediaResult.maskedPhone}` : ''}
+                  {mediaResult.confidence > 0 ? ` · 置信度 ${Math.round(mediaResult.confidence * 100)}%` : ''}
+                </p>
+                {mediaResult.mediaUrls.map((url) => {
+                  const lower = url.toLowerCase()
+                  if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.m4v')) {
+                    return <video key={url} src={url} controls style={{ width: '100%', maxHeight: 220 }} />
+                  }
+                  if (/\.(jpg|jpeg|png|webp)$/.test(lower)) {
+                    return (
+                      <img
+                        key={url}
+                        src={url}
+                        alt="录入素材"
+                        style={{ width: '100%', maxHeight: 220, objectFit: 'contain' }}
+                      />
+                    )
+                  }
+                  return (
+                    <p key={url}>
+                      <a href={url} target="_blank" rel="noreferrer">
+                        查看原始文档
+                      </a>
+                    </p>
+                  )
+                })}
+                {mediaResult.ocrText && (
+                  <details>
+                    <summary>识别原文</summary>
+                    <pre style={{ whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
+                      {mediaResult.ocrText}
+                    </pre>
+                  </details>
+                )}
+                <div className="draft-fields">
+                  <input
+                    value={draft.landlordId}
+                    onChange={(e) => setDraft({ ...draft, landlordId: e.target.value })}
+                    placeholder="房东 UUID（自动匹配后可确认）"
+                  />
+                  <div className="community-field">
+                    <input
+                      value={draft.communityName}
+                      onChange={(e) => onCommunityNameChange(e.target.value)}
+                      placeholder="小区名称（输入 2 个字自动联想）"
+                    />
+                    {communityOptions.length > 0 && (
+                      <div className="community-suggest">
+                        {communityOptions.map((item) => (
+                          <button key={item.uuid} type="button" onClick={() => pickCommunity(item)}>
+                            <span>{item.name}</span>
+                            <span className="muted">
+                              {item.districtName} · {item.streetName}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <input
+                    value={draft.communityUuid}
+                    onChange={(e) => setDraft({ ...draft, communityUuid: e.target.value })}
+                    placeholder="小区 UUID（选择后自动填充）"
+                  />
+                  <input
+                    value={draft.areaSqm}
+                    onChange={(e) => setDraft({ ...draft, areaSqm: e.target.value })}
+                    placeholder="面积（㎡）"
+                    inputMode="decimal"
+                  />
+                  <input
+                    value={draft.rentCents}
+                    onChange={(e) => setDraft({ ...draft, rentCents: e.target.value })}
+                    placeholder="月租（元）"
+                    inputMode="decimal"
+                  />
+                  <input
+                    value={draft.layout}
+                    onChange={(e) => setDraft({ ...draft, layout: e.target.value })}
+                    placeholder="户型"
+                  />
+                  <input
+                    value={draft.title}
+                    onChange={(e) => setDraft({ ...draft, title: e.target.value })}
+                    placeholder="标题（可留空自动生成）"
+                  />
+                </div>
+                <details className="community-new">
+                  <summary>小区不存在？新建小区</summary>
+                  <div className="draft-fields">
+                    <input
+                      value={newCommunity.name}
+                      onChange={(e) => setNewCommunity({ ...newCommunity, name: e.target.value })}
+                      placeholder="小区名称"
+                    />
+                    <input
+                      value={newCommunity.districtName}
+                      onChange={(e) => setNewCommunity({ ...newCommunity, districtName: e.target.value })}
+                      placeholder="区名，如 南山区"
+                    />
+                    <input
+                      value={newCommunity.districtCode}
+                      onChange={(e) => setNewCommunity({ ...newCommunity, districtCode: e.target.value })}
+                      placeholder="区代码，如 440305"
+                    />
+                    <input
+                      value={newCommunity.streetName}
+                      onChange={(e) => setNewCommunity({ ...newCommunity, streetName: e.target.value })}
+                      placeholder="街道名，如 粤海街道"
+                    />
+                    <input
+                      value={newCommunity.streetCode}
+                      onChange={(e) => setNewCommunity({ ...newCommunity, streetCode: e.target.value })}
+                      placeholder="街道代码，如 440305006"
+                    />
+                    <select
+                      value={newCommunity.communityType}
+                      onChange={(e) =>
+                        setNewCommunity({
+                          ...newCommunity,
+                          communityType: e.target.value === 'apartment' ? 'apartment' : 'residential',
+                        })
+                      }
+                    >
+                      <option value="residential">住宅小区</option>
+                      <option value="apartment">公寓</option>
+                    </select>
+                    <input
+                      value={newCommunity.lat}
+                      onChange={(e) => setNewCommunity({ ...newCommunity, lat: e.target.value })}
+                      placeholder="纬度，如 22.5178"
+                      inputMode="decimal"
+                    />
+                    <input
+                      value={newCommunity.lng}
+                      onChange={(e) => setNewCommunity({ ...newCommunity, lng: e.target.value })}
+                      placeholder="经度，如 113.9356"
+                      inputMode="decimal"
+                    />
+                  </div>
+                  <button className="btn" onClick={submitNewCommunity}>
+                    创建并选中
+                  </button>
+                </details>
+                {communityMessage && <p className="muted">{communityMessage}</p>}
+                <div className="draft-actions">
+                  <button className="btn" onClick={bindLandlord} disabled={mediaLoading}>
+                    绑定房东
+                  </button>
+                  <button className="btn primary" onClick={publishDraft} disabled={mediaLoading}>
+                    确认发布
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="panel" id="intake-drafts">
+          <div className="panel-head">
+            <h2>录入草稿</h2>
+            <span className="muted">{drafts.length} 条</span>
+          </div>
+          <p className="muted">
+            图片/视频识别产生的草稿在这里查看；识别失败或未配置模型的草稿，配置凭证后可重试。
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>类型</th>
+                  <th>小区</th>
+                  <th>面积</th>
+                  <th>月租</th>
+                  <th>状态</th>
+                  <th>房东</th>
+                  <th>时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drafts.map((item) => (
+                  <tr key={item.uuid}>
+                    <td>
+                      {item.inputType === 'video'
+                        ? '视频'
+                        : item.inputType === 'image'
+                          ? '图片'
+                          : item.inputType === 'doc'
+                            ? '文档'
+                            : '文字'}
+                    </td>
+                    <td>{item.communityName || '—'}</td>
+                    <td>{item.areaSqm ? `${item.areaSqm}㎡` : '—'}</td>
+                    <td>{item.rentYuan ? `${item.rentYuan} 元/月` : '—'}</td>
+                    <td>
+                      <span className={`status status-${item.status}`}>{item.status}</span>
+                      {item.errorMessage ? <span className="muted"> · {item.errorMessage}</span> : null}
+                    </td>
+                    <td>{item.landlordId ? item.landlordId.slice(0, 8) : '未匹配'}</td>
+                    <td>{item.createdAt}</td>
+                    <td>
+                      <button className="table-action" onClick={() => openDraft(item)} disabled={mediaLoading}>
+                        查看
+                      </button>
+                      {(item.status === 'failed' || item.status === 'not_configured') && (
+                        <button className="table-action" onClick={() => retryDraft(item)} disabled={mediaLoading}>
+                          重试
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {drafts.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="empty">
+                      暂无草稿
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -385,6 +852,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                   <th>房源</th>
                   <th>状态</th>
                   <th>时间</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -395,11 +863,16 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                     <td>{contact.propertyTitle}</td>
                     <td>{contact.status}</td>
                     <td>{contact.createdAt}</td>
+                    <td>
+                      <button className="table-action" onClick={() => showContactDetail(contact)}>
+                        详情
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {contacts.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="empty">
+                    <td colSpan={6} className="empty">
                       暂无联系记录
                     </td>
                   </tr>
@@ -407,6 +880,18 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
               </tbody>
             </table>
           </div>
+          {contactDetail && (
+            <div className="draft-card">
+              <p className="muted">联系记录 {contactDetail.uuid}</p>
+              <p>
+                租客 {contactDetail.tenantSurname || '—'} · {contactDetail.tenantPhoneMask} · 状态{' '}
+                {contactDetail.status}
+              </p>
+              <p>房源：{contactDetail.propertyTitle}</p>
+              <p>时间：{contactDetail.createdAt}</p>
+              {contactDetail.note && <p>备注：{contactDetail.note}</p>}
+            </div>
+          )}
         </section>
 
         <section className="panel" id="freshness">
@@ -448,6 +933,39 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
             <li>管理接口走 RequireAdmin 中间件</li>
             <li>TOTP 已支持绑定与登录校验</li>
           </ul>
+          <h3 className="sub-head">审计日志</h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>动作</th>
+                  <th>操作者</th>
+                  <th>对象</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditLogs.map((log) => (
+                  <tr key={log.id}>
+                    <td>{log.action}</td>
+                    <td>{log.actorType}</td>
+                    <td>
+                      {log.targetType}
+                      {log.targetId ? ` · ${log.targetId}` : ''}
+                    </td>
+                    <td>{log.createdAt}</td>
+                  </tr>
+                ))}
+                {auditLogs.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="empty">
+                      暂无审计日志
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
           <div className="totp-box">
             {!totpSecret && (
               <button className="btn secondary" onClick={beginTOTP}>
