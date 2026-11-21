@@ -31,6 +31,7 @@ interface VoiceServerEvent {
 
 interface AssistantPageData {
   sessionId: string
+  voiceToken: string
   messages: ChatMessage[]
   input: string
   loading: boolean
@@ -62,6 +63,7 @@ interface AssistantPageData {
 Page<AssistantPageData, WechatMiniprogram.Page.CustomOption>({
   data: {
     sessionId: '',
+    voiceToken: '',
     messages: [],
     input: '',
     loading: false,
@@ -166,19 +168,19 @@ Page<AssistantPageData, WechatMiniprogram.Page.CustomOption>({
           voiceHint: status.hint,
         })
         if (this.voiceConfigured && this.data.sessionId) {
-          this.connectVoiceSocket(this.data.sessionId)
+          this.connectVoiceSocket(this.data.sessionId, this.data.voiceToken)
         }
       })
       .catch(() => this.setData({ voiceHint: '语音状态未知，可继续用文字' }))
   },
 
-  connectVoiceSocket(sessionId: string) {
+  connectVoiceSocket(sessionId: string, voiceToken: string) {
     if (!sessionId) {
       return
     }
     this.closeVoiceSocket()
     const task = wx.connectSocket({
-      url: voiceSocketURL(getApp<IAppOption>().globalData.apiBase, sessionId),
+      url: voiceSocketURL(getApp<IAppOption>().globalData.apiBase, sessionId, voiceToken),
       timeout: 8000,
     })
     this.socket = task
@@ -473,6 +475,7 @@ Page<AssistantPageData, WechatMiniprogram.Page.CustomOption>({
       .then((session) => {
         this.setData({
           sessionId: session.sessionId,
+          voiceToken: session.voiceToken,
           messages: [
             {
               role: 'robot',
@@ -481,7 +484,7 @@ Page<AssistantPageData, WechatMiniprogram.Page.CustomOption>({
           ],
         })
         if (this.voiceConfigured) {
-          this.connectVoiceSocket(session.sessionId)
+          this.connectVoiceSocket(session.sessionId, session.voiceToken)
         }
       })
       .catch((err: Error) => this.setData({ error: err.message || '小亿暂时不在线' }))
@@ -780,9 +783,9 @@ function formatRent(cents: number): string {
   return yuan >= 10000 ? `${(yuan / 10000).toFixed(1)}万/月` : `${yuan}元/月`
 }
 
-function voiceSocketURL(apiBase: string, sessionId: string): string {
+function voiceSocketURL(apiBase: string, sessionId: string, voiceToken: string): string {
   const base = apiBase.replace(/\/+$/, '')
-  const path = `/v1/assistant/voice?sessionId=${encodeURIComponent(sessionId)}`
+  const path = `/v1/assistant/voice?sessionId=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(voiceToken)}`
   if (base.startsWith('https://')) {
     return `wss://${base.slice('https://'.length)}${path}`
   }

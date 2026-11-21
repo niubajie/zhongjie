@@ -117,7 +117,7 @@ func main() {
 	freshnessHandler := freshness.NewHandler(freshnessSvc)
 
 	assistantRepo := assistant.NewRepository(pool)
-	assistantSvc := assistant.NewService(assistantRepo, modelGateway, mediaSvc)
+	assistantSvc := assistant.NewService(assistantRepo, modelGateway, mediaSvc, cfg.JWTSecret)
 	assistantHandler := assistant.NewHandler(assistantSvc)
 
 	importRepo := importjob.NewRepository(pool)

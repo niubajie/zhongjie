@@ -2,6 +2,9 @@ package assistant
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,13 +25,14 @@ var (
 )
 
 type Service struct {
-	repo  *Repository
-	gw    *modelgw.Gateway
-	media *storage.Service
+	repo        *Repository
+	gw          *modelgw.Gateway
+	media       *storage.Service
+	voiceSecret []byte
 }
 
-func NewService(repo *Repository, gw *modelgw.Gateway, media *storage.Service) *Service {
-	return &Service{repo: repo, gw: gw, media: media}
+func NewService(repo *Repository, gw *modelgw.Gateway, media *storage.Service, voiceSecret string) *Service {
+	return &Service{repo: repo, gw: gw, media: media, voiceSecret: []byte(voiceSecret)}
 }
 
 type VoiceStatus struct {
@@ -85,7 +89,21 @@ func (s *Service) CreateSession(ctx context.Context) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	return Session{UUID: uuid, Slots: map[string]any{}}, nil
+	return Session{UUID: uuid, VoiceToken: s.voiceToken(uuid), Slots: map[string]any{}}, nil
+}
+
+func (s *Service) voiceToken(sessionUUID string) string {
+	mac := hmac.New(sha256.New, s.voiceSecret)
+	mac.Write([]byte("voice:" + sessionUUID))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (s *Service) ValidateVoiceToken(sessionUUID, token string) bool {
+	if sessionUUID == "" || token == "" || len(s.voiceSecret) == 0 {
+		return false
+	}
+	expected := s.voiceToken(sessionUUID)
+	return hmac.Equal([]byte(expected), []byte(token))
 }
 
 func (s *Service) Message(ctx context.Context, in MessageInput) (MessageReply, error) {
