@@ -173,7 +173,7 @@ func (h *Handler) updateSource(c *gin.Context) {
 		switch {
 		case errors.Is(err, ErrSourceNotFound):
 			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
-		case errors.Is(err, ErrDuplicateSource):
+		case errors.Is(err, ErrDuplicateSource), errors.Is(err, ErrInvalidSourceInput):
 			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
 		default:
 			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "更新信息源失败")

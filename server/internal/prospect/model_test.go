@@ -1,6 +1,10 @@
 package prospect
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"testing"
+)
 
 func TestValidStatus(t *testing.T) {
 	valid := []string{
@@ -71,5 +75,17 @@ func TestParseBoolSetting(t *testing.T) {
 		if got := parseBoolSetting(in); got != want {
 			t.Errorf("parseBoolSetting(%q) = %v, want %v", in, got, want)
 		}
+	}
+}
+
+func TestUpdateSourceValidatesInput(t *testing.T) {
+	s := &Service{}
+	ctx := context.Background()
+
+	if err := s.UpdateSource(ctx, 0, "uuid", UpdateSourceInput{Name: "", Kind: "self_owned"}); !errors.Is(err, ErrInvalidSourceInput) {
+		t.Errorf("空名称应返回 ErrInvalidSourceInput, got %v", err)
+	}
+	if err := s.UpdateSource(ctx, 0, "uuid", UpdateSourceInput{Name: "ok", Kind: "bogus"}); !errors.Is(err, ErrInvalidSourceInput) {
+		t.Errorf("非法类型应返回 ErrInvalidSourceInput, got %v", err)
 	}
 }

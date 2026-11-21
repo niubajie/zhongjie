@@ -131,10 +131,10 @@ func (s *Service) SetHalted(ctx context.Context, adminID int64, halted bool) err
 
 func (s *Service) UpdateSource(ctx context.Context, adminID int64, uuid string, in UpdateSourceInput) error {
 	if in.Name == "" {
-		return errors.New("信息源名称不能为空")
+		return fmt.Errorf("%w: 名称不能为空", ErrInvalidSourceInput)
 	}
 	if !validSourceKinds[in.Kind] {
-		return errors.New("信息源类型不合法")
+		return fmt.Errorf("%w: 类型不合法", ErrInvalidSourceInput)
 	}
 	if err := s.repo.UpdateSource(ctx, uuid, in); err != nil {
 		return err

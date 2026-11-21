@@ -8,13 +8,14 @@ import "errors"
 // 停机开关默认关闭，主链路零影响。
 
 var (
-	ErrSourceNotFound    = errors.New("信息源不存在")
-	ErrLeadNotFound      = errors.New("线索不存在")
-	ErrDuplicateLead     = errors.New("线索已存在")
-	ErrDuplicateSource   = errors.New("信息源名称已存在")
-	ErrOptOutExists      = errors.New("该联系方式已在拒收名单")
-	ErrInvalidStatus     = errors.New("无效的线索状态")
-	ErrInvalidTransition = errors.New("不允许的状态转换")
+	ErrSourceNotFound     = errors.New("信息源不存在")
+	ErrLeadNotFound       = errors.New("线索不存在")
+	ErrDuplicateLead      = errors.New("线索已存在")
+	ErrDuplicateSource    = errors.New("信息源名称已存在")
+	ErrInvalidSourceInput = errors.New("信息源参数不合法")
+	ErrOptOutExists       = errors.New("该联系方式已在拒收名单")
+	ErrInvalidStatus      = errors.New("无效的线索状态")
+	ErrInvalidTransition  = errors.New("不允许的状态转换")
 )
 
 // 线索类型
