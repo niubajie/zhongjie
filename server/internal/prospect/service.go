@@ -4,16 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 )
 
 // Service 承载业务判断；采集 / 评分 / 联系 / 跟进在后续批次扩展。
 // 批次 1 只提供信息源与线索的基础读写，不启用采集。
 type Service struct {
-	repo *Repository
+	repo   *Repository
+	halted atomic.Bool
 }
 
 func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+	s := &Service{repo: repo}
+	// 启动时加载全局停机状态；失败不阻塞启动（默认不停机，主链路零影响）。
+	if v, err := repo.GetSetting(context.Background(), SettingKeyGlobalHalt); err == nil {
+		s.halted.Store(parseBoolSetting(v))
+	}
+	return s
 }
 
 var validSourceKinds = map[string]bool{
@@ -89,6 +96,64 @@ func (s *Service) GetLead(ctx context.Context, uuid string) (ProspectLeadVO, err
 		return ProspectLeadVO{}, err
 	}
 	return toLeadVO(l), nil
+}
+
+// ---- 批次 2：全局停机开关 ----
+
+// IsHalted 返回全局停机状态，供采集器 / 联系流程热读（无锁）。
+func (s *Service) IsHalted() bool {
+	return s.halted.Load()
+}
+
+func (s *Service) GetKillSwitch() KillSwitchState {
+	return KillSwitchState{Halted: s.halted.Load()}
+}
+
+// SetHalted 切换全局停机：先持久化，成功后更新内存并写审计。
+func (s *Service) SetHalted(ctx context.Context, adminID int64, halted bool) error {
+	val := "false"
+	if halted {
+		val = "true"
+	}
+	if err := s.repo.UpsertSetting(ctx, SettingKeyGlobalHalt, val, adminID); err != nil {
+		return err
+	}
+	s.halted.Store(halted)
+	action := "prospect.killswitch.disable"
+	if halted {
+		action = "prospect.killswitch.enable"
+	}
+	s.repo.Audit(ctx, adminID, action, "prospect_setting", SettingKeyGlobalHalt)
+	return nil
+}
+
+// ---- 批次 2：信息源更新与软删除 ----
+
+func (s *Service) UpdateSource(ctx context.Context, adminID int64, uuid string, in UpdateSourceInput) error {
+	if in.Name == "" {
+		return errors.New("信息源名称不能为空")
+	}
+	if !validSourceKinds[in.Kind] {
+		return errors.New("信息源类型不合法")
+	}
+	if err := s.repo.UpdateSource(ctx, uuid, in); err != nil {
+		return err
+	}
+	s.repo.Audit(ctx, adminID, "prospect.source.update", "lead_source", uuid)
+	return nil
+}
+
+func (s *Service) DeleteSource(ctx context.Context, adminID int64, uuid string) error {
+	if err := s.repo.SoftDeleteSource(ctx, uuid); err != nil {
+		return err
+	}
+	s.repo.Audit(ctx, adminID, "prospect.source.delete", "lead_source", uuid)
+	return nil
+}
+
+// parseBoolSetting 解析配置值为布尔（供单测覆盖）。
+func parseBoolSetting(v string) bool {
+	return v == "true"
 }
 
 func toSourceVO(s LeadSource) LeadSourceVO {

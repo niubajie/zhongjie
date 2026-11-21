@@ -1108,6 +1108,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+  /v1/admin/lead-sources/{uuid}:
+    patch:
+      tags: [prospect]
+      summary: 更新信息源（批次2）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLeadSourceInput"
+      responses:
+        "200":
+          description: 更新结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    delete:
+      tags: [prospect]
+      summary: 软删除信息源（批次2）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
   /v1/admin/prospects:
     get:
       tags: [prospect]
@@ -1972,6 +2013,17 @@ components:
         kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
         baseUrl: {type: string}
         rateLimitMs: {type: integer, minimum: 0}
+        reviewNote: {type: string}
+    UpdateLeadSourceInput:
+      type: object
+      required: [name, kind]
+      properties:
+        name: {type: string}
+        kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
+        baseUrl: {type: string}
+        rateLimitMs: {type: integer, minimum: 0}
+        robotsOk: {type: boolean}
+        termsOk: {type: boolean}
         reviewNote: {type: string}
     LeadSource:
       type: object

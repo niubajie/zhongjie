@@ -58,3 +58,18 @@ func TestTerminalStatusesClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestParseBoolSetting(t *testing.T) {
+	cases := map[string]bool{
+		"true":  true,
+		"false": false,
+		"":      false,
+		"1":     false,
+		"TRUE":  false,
+	}
+	for in, want := range cases {
+		if got := parseBoolSetting(in); got != want {
+			t.Errorf("parseBoolSetting(%q) = %v, want %v", in, got, want)
+		}
+	}
+}

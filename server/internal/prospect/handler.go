@@ -26,7 +26,11 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.POST("/lead-sources", h.createSource)
 	r.PATCH("/lead-sources/:uuid/enabled", h.setSourceEnabled)
 	r.GET("/prospects", h.listLeads)
+	r.GET("/prospects/kill-switch", h.getKillSwitch)
+	r.PUT("/prospects/kill-switch", h.setKillSwitch)
 	r.GET("/prospects/:uuid", h.getLead)
+	r.PATCH("/lead-sources/:uuid", h.updateSource)
+	r.DELETE("/lead-sources/:uuid", h.deleteSource)
 }
 
 func (h *Handler) allow(c *gin.Context) bool {
@@ -127,4 +131,69 @@ func (h *Handler) getLead(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+// ---- 批次 2：全局停机开关 ----
+
+func (h *Handler) getKillSwitch(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	httpx.OK(c, h.svc.GetKillSwitch())
+}
+
+func (h *Handler) setKillSwitch(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	var body KillSwitchState
+	if err := c.ShouldBindJSON(&body); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	if err := h.svc.SetHalted(c.Request.Context(), httpx.CurrentAdminID(c), body.Halted); err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "切换停机开关失败")
+		return
+	}
+	httpx.OK(c, h.svc.GetKillSwitch())
+}
+
+// ---- 批次 2：信息源更新与删除 ----
+
+func (h *Handler) updateSource(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	var in UpdateSourceInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	if err := h.svc.UpdateSource(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid"), in); err != nil {
+		switch {
+		case errors.Is(err, ErrSourceNotFound):
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
+		case errors.Is(err, ErrDuplicateSource):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "更新信息源失败")
+		}
+		return
+	}
+	httpx.OK(c, gin.H{"updated": true})
+}
+
+func (h *Handler) deleteSource(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	if err := h.svc.DeleteSource(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid")); err != nil {
+		if errors.Is(err, ErrSourceNotFound) {
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "删除信息源失败")
+		return
+	}
+	httpx.OK(c, gin.H{"deleted": true})
 }

@@ -11,6 +11,7 @@ var (
 	ErrSourceNotFound    = errors.New("信息源不存在")
 	ErrLeadNotFound      = errors.New("线索不存在")
 	ErrDuplicateLead     = errors.New("线索已存在")
+	ErrDuplicateSource   = errors.New("信息源名称已存在")
 	ErrOptOutExists      = errors.New("该联系方式已在拒收名单")
 	ErrInvalidStatus     = errors.New("无效的线索状态")
 	ErrInvalidTransition = errors.New("不允许的状态转换")
@@ -231,4 +232,33 @@ type ProspectLeadVO struct {
 	MatchedPropertyID string  `json:"matchedPropertyId,omitempty"`
 	CreatedAt         string  `json:"createdAt"`
 	UpdatedAt         string  `json:"updatedAt"`
+}
+
+// ---- 批次 2：全局停机开关与信息源更新 ----
+
+// SettingKeyGlobalHalt 全局停机开关的配置键。
+const SettingKeyGlobalHalt = "global_halt"
+
+// ProspectSetting 运行时配置键值对。
+type ProspectSetting struct {
+	Key       string
+	Value     string
+	UpdatedAt string
+	UpdatedBy int64
+}
+
+// KillSwitchState 全局停机状态视图。
+type KillSwitchState struct {
+	Halted bool `json:"halted"`
+}
+
+// UpdateSourceInput 信息源更新（全量覆盖可编辑字段）。
+type UpdateSourceInput struct {
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	BaseURL     string `json:"baseUrl,omitempty"`
+	RateLimitMs int    `json:"rateLimitMs,omitempty"`
+	RobotsOK    bool   `json:"robotsOk"`
+	TermsOK     bool   `json:"termsOk"`
+	ReviewNote  string `json:"reviewNote,omitempty"`
 }

@@ -38,7 +38,7 @@ func (r *Repository) CreateSource(ctx context.Context, in CreateSourceInput) (in
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return 0, "", ErrDuplicateLead
+			return 0, "", ErrDuplicateSource
 		}
 		return 0, "", fmt.Errorf("create lead source: %w", err)
 	}
@@ -281,4 +281,70 @@ func (r *Repository) Audit(ctx context.Context, adminID int64, action, targetTyp
 		INSERT INTO audit_logs (actor_type, actor_id, action, target_type, target_id)
 		VALUES ('admin', $1, $2, $3, $4)
 	`, adminID, action, targetType, targetID)
+}
+
+// ---- 批次 2：运行时配置 ----
+
+func (r *Repository) GetSetting(ctx context.Context, key string) (string, error) {
+	var value string
+	err := r.pool.QueryRow(ctx, `SELECT value FROM prospect_settings WHERE key = $1`, key).Scan(&value)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get prospect setting: %w", err)
+	}
+	return value, nil
+}
+
+func (r *Repository) UpsertSetting(ctx context.Context, key, value string, adminID int64) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO prospect_settings (key, value, updated_by)
+		VALUES ($1, $2, NULLIF($3, 0))
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()
+	`, key, value, adminID)
+	if err != nil {
+		return fmt.Errorf("upsert prospect setting: %w", err)
+	}
+	return nil
+}
+
+// ---- 批次 2：信息源更新与软删除 ----
+
+func (r *Repository) UpdateSource(ctx context.Context, uuid string, in UpdateSourceInput) error {
+	rate := in.RateLimitMs
+	if rate <= 0 {
+		rate = 3000
+	}
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE lead_sources
+		SET name = $2, kind = $3, base_url = NULLIF($4, ''), rate_limit_ms = $5,
+		    robots_ok = $6, terms_ok = $7, review_note = NULLIF($8, ''), updated_at = now()
+		WHERE uuid = $1 AND deleted_at IS NULL
+	`, uuid, in.Name, in.Kind, in.BaseURL, rate, in.RobotsOK, in.TermsOK, in.ReviewNote)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrDuplicateSource
+		}
+		return fmt.Errorf("update lead source: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrSourceNotFound
+	}
+	return nil
+}
+
+func (r *Repository) SoftDeleteSource(ctx context.Context, uuid string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE lead_sources SET deleted_at = now(), enabled = false, updated_at = now()
+		WHERE uuid = $1 AND deleted_at IS NULL
+	`, uuid)
+	if err != nil {
+		return fmt.Errorf("delete lead source: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrSourceNotFound
+	}
+	return nil
 }
