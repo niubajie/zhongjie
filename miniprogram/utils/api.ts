@@ -18,6 +18,18 @@ import type {
 import { request } from './request'
 import { getToken } from './session'
 
+// Media URLs may be relative (/media/...) in local mode; make them playable in the mini program.
+export function absoluteMediaURL(url?: string): string {
+  if (!url) {
+    return ''
+  }
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url
+  }
+  const base = getApp<IAppOption>().globalData.apiBase
+  return `${base}${url.startsWith('/') ? '' : '/'}${url}`
+}
+
 export function login(code: string, devOpenid?: string): Promise<AuthResult> {
   return request<AuthResult>('/v1/auth/wechat/login', {
     method: 'POST',

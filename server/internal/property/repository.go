@@ -124,7 +124,32 @@ func (r *Repository) Detail(ctx context.Context, uuid string) (Detail, error) {
 		}
 		d.Images = append(d.Images, img)
 	}
-	return d, rows.Err()
+	if err := rows.Err(); err != nil {
+		return Detail{}, err
+	}
+	rows.Close()
+
+	d.Videos = []Video{}
+	videoRows, err := r.pool.Query(ctx, `
+		SELECT pm.object_key, COALESCE(pm.cover_key, ''), COALESCE(pm.duration_ms, 0), pm.sort
+		FROM property_media pm
+		JOIN properties p ON p.id = pm.property_id
+		WHERE p.uuid = $1 AND pm.media_type = 'video' AND pm.moderation_status = 'approved'
+		ORDER BY pm.sort ASC, pm.id ASC
+		LIMIT 3
+	`, uuid)
+	if err != nil {
+		return Detail{}, fmt.Errorf("query property videos: %w", err)
+	}
+	defer videoRows.Close()
+	for videoRows.Next() {
+		var video Video
+		if err := videoRows.Scan(&video.ObjectKey, &video.CoverKey, &video.DurationMs, &video.Sort); err != nil {
+			return Detail{}, err
+		}
+		d.Videos = append(d.Videos, video)
+	}
+	return d, videoRows.Err()
 }
 
 // ListByLandlord returns the landlord's own listings with freshness state.

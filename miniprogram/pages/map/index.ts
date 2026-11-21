@@ -1,4 +1,4 @@
-import { createContactRequest, getMap, getProperty, type MapQuery } from '../../utils/api'
+import { absoluteMediaURL, createContactRequest, getMap, getProperty, type MapQuery } from '../../utils/api'
 import type { MapCluster, MapItem, PropertyDetail } from '../../types/api'
 
 interface MarkerTarget {
@@ -48,6 +48,7 @@ interface MapPageData {
   showDetail: boolean
   rentYuan: string
   imageCount: number
+  images: string[]
   contactLoading: boolean
   showRobot: boolean
   robotText: string
@@ -77,6 +78,7 @@ Page<MapPageData, WechatMiniprogram.Page.CustomOption>({
     showDetail: false,
     rentYuan: '',
     imageCount: 0,
+    images: [],
     contactLoading: false,
     showRobot: true,
     robotText: '我是小亿，想找什么样的房子？',
@@ -280,11 +282,13 @@ Page<MapPageData, WechatMiniprogram.Page.CustomOption>({
     wx.showLoading({ title: '加载房源' })
     getProperty(uuid)
       .then((detail) => {
+        const images = detail.images.map((item) => absoluteMediaURL(item.url)).filter(Boolean)
         this.setData({
           detail,
           showDetail: true,
           rentYuan: formatRent(detail.rentCents),
-          imageCount: detail.images.length,
+          imageCount: images.length,
+          images,
         })
       })
       .catch((err: Error) => {
@@ -295,6 +299,20 @@ Page<MapPageData, WechatMiniprogram.Page.CustomOption>({
 
   closeDetail() {
     this.setData({ showDetail: false })
+  },
+
+  onImageError(e: { currentTarget: { dataset: { src?: string } } }) {
+    const src = e.currentTarget.dataset.src || ''
+    const images = this.data.images.filter((item) => item !== src)
+    this.setData({ images, imageCount: images.length })
+  },
+
+  onPreviewImage(e: { currentTarget: { dataset: { src?: string } } }) {
+    const src = e.currentTarget.dataset.src || ''
+    if (!src || !this.data.images.length) {
+      return
+    }
+    wx.previewImage({ current: src, urls: this.data.images })
   },
 
   onContact() {

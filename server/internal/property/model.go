@@ -105,6 +105,15 @@ type Created struct {
 	PendingReason string `json:"pendingReason,omitempty"`
 }
 
+type Video struct {
+	ObjectKey  string `json:"objectKey"`
+	URL        string `json:"url,omitempty"`
+	CoverKey   string `json:"coverKey,omitempty"`
+	CoverURL   string `json:"coverUrl,omitempty"`
+	DurationMs int    `json:"durationMs,omitempty"`
+	Sort       int    `json:"sort"`
+}
+
 type Detail struct {
 	UUID            string  `json:"uuid"`
 	DistrictCode    string  `json:"districtCode"`
@@ -122,4 +131,5 @@ type Detail struct {
 	PublishedAt     string  `json:"publishedAt,omitempty"`
 	LastConfirmedAt string  `json:"lastConfirmedAt,omitempty"`
 	Images          []Image `json:"images"`
+	Videos          []Video `json:"videos"`
 }

@@ -56,8 +56,18 @@ export interface MapData {
 
 export interface PropertyImage {
   objectKey: string
+  url?: string
   width?: number
   height?: number
+  sort: number
+}
+
+export interface PropertyVideo {
+  objectKey: string
+  url?: string
+  coverKey?: string
+  coverUrl?: string
+  durationMs?: number
   sort: number
 }
 
@@ -192,6 +202,7 @@ export interface PropertyDetail {
   publishedAt?: string
   lastConfirmedAt?: string
   images: PropertyImage[]
+  videos?: PropertyVideo[]
 }
 
 export interface LoginResponse {

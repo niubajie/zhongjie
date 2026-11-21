@@ -1,4 +1,4 @@
-import { createContactRequest, getProperty } from '../../utils/api'
+import { absoluteMediaURL, createContactRequest, getProperty } from '../../utils/api'
 import type { PropertyDetail } from '../../types/api'
 
 interface PropertyPageData {
@@ -8,6 +8,9 @@ interface PropertyPageData {
   loading: boolean
   error: string
   imageCount: number
+  images: string[]
+  videoUrl: string
+  videoCover: string
   contactLoading: boolean
 }
 
@@ -19,6 +22,9 @@ Page<PropertyPageData, WechatMiniprogram.Page.CustomOption>({
     loading: true,
     error: '',
     imageCount: 0,
+    images: [],
+    videoUrl: '',
+    videoCover: '',
     contactLoading: false,
   },
 
@@ -31,16 +37,35 @@ Page<PropertyPageData, WechatMiniprogram.Page.CustomOption>({
     }
     getProperty(uuid)
       .then((detail) => {
+        const images = detail.images.map((item) => absoluteMediaURL(item.url)).filter(Boolean)
+        const video = detail.videos?.find((item) => item.url)
         this.setData({
           detail,
           rentYuan: formatRent(detail.rentCents),
-          imageCount: detail.images.length,
+          imageCount: images.length,
+          images,
+          videoUrl: video ? absoluteMediaURL(video.url) : '',
+          videoCover: video ? absoluteMediaURL(video.coverUrl) : '',
           loading: false,
         })
       })
       .catch((err: Error) => {
         this.setData({ loading: false, error: err.message || '房源加载失败' })
       })
+  },
+
+  onImageError(e: { currentTarget: { dataset: { src?: string } } }) {
+    const src = e.currentTarget.dataset.src || ''
+    const images = this.data.images.filter((item) => item !== src)
+    this.setData({ images, imageCount: images.length })
+  },
+
+  onPreviewImage(e: { currentTarget: { dataset: { src?: string } } }) {
+    const src = e.currentTarget.dataset.src || ''
+    if (!src || !this.data.images.length) {
+      return
+    }
+    wx.previewImage({ current: src, urls: this.data.images })
   },
 
   onContact() {

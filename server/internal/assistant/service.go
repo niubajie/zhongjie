@@ -299,6 +299,14 @@ func (s *Service) Tour(ctx context.Context, propertyUUID string) (Tour, error) {
 	if err != nil {
 		return Tour{}, err
 	}
+	if s.media != nil {
+		for i := range images {
+			images[i] = s.media.URL(images[i])
+		}
+		for i := range videos {
+			videos[i] = s.media.URL(videos[i])
+		}
+	}
 	return Tour{PropertyUUID: propertyUUID, Images: images, Videos: videos, Lat: lat, Lng: lng}, nil
 }
 

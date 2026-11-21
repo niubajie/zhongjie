@@ -74,6 +74,10 @@ func (s *Service) Detail(ctx context.Context, uuid string) (Detail, error) {
 		for i := range detail.Images {
 			detail.Images[i].URL = s.storage.URL(detail.Images[i].ObjectKey)
 		}
+		for i := range detail.Videos {
+			detail.Videos[i].URL = s.storage.URL(detail.Videos[i].ObjectKey)
+			detail.Videos[i].CoverURL = s.storage.URL(detail.Videos[i].CoverKey)
+		}
 	}
 	return detail, nil
 }
@@ -136,13 +140,15 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (Cre
 	in.ImageKeys = keys
 
 	// v1.4 hard gate: only a matched residential community may auto-publish.
-	status := "pending"
-	pendingReason := "missing_community_name"
-	if place.CommunityID != nil {
-		status = "active"
-		pendingReason = ""
-	}
+	status, pendingReason := publishDecision(place)
 	return s.repo.Create(ctx, userID, place, in, status, pendingReason)
+}
+
+func publishDecision(place PublishPlace) (string, string) {
+	if place.CommunityID != nil {
+		return "active", ""
+	}
+	return "pending", "missing_community_name"
 }
 
 func (s *Service) resolvePlace(ctx context.Context, in CreateInput) (PublishPlace, error) {

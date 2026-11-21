@@ -71,10 +71,22 @@
     </view>
 
     <view class="gallery">
-      <view class="gallery-cover">
-        <text class="gallery-count">共 {{imageCount}} 张图片</text>
-        <text class="gallery-placeholder">房源实景图</text>
+      <swiper class="gallery-cover" wx:if="{{images.length}}" indicator-dots circular>
+        <swiper-item wx:for="{{images}}" wx:key="*this">
+          <image
+            class="gallery-image"
+            src="{{item}}"
+            mode="aspectFill"
+            data-src="{{item}}"
+            bindtap="onPreviewImage"
+            binderror="onImageError"
+          />
+        </swiper-item>
+      </swiper>
+      <view class="gallery-cover" wx:else>
+        <text class="gallery-placeholder">暂无图片</text>
       </view>
+      <text class="gallery-count">共 {{imageCount}} 张</text>
     </view>
 
     <view class="metrics">
