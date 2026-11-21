@@ -73,8 +73,22 @@ export interface BuildingSuggest {
   lng: number
 }
 
+export interface CommunitySuggest {
+  uuid: string
+  name: string
+  districtCode: string
+  districtName: string
+  streetCode: string
+  streetName: string
+  communityType: 'residential' | 'apartment'
+  lat: number
+  lng: number
+}
+
 export interface CreatePropertyInput {
-  buildingUuid: string
+  communityUuid?: string
+  communityName?: string
+  buildingUuid?: string
   areaSqm: number
   rentCents: number
   layout?: string

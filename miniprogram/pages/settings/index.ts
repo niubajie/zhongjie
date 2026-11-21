@@ -38,6 +38,10 @@ Page<SettingsPageData, WechatMiniprogram.Page.CustomOption>({
       .catch((err: Error) => this.setData({ loading: false, message: err.message || '加载失败' }))
   },
 
+  onOpenMyProperties() {
+    wx.navigateTo({ url: '/pages/my-props/index' })
+  },
+
   onWechatInput(e: { detail: { value: string } }) {
     this.setData({ wechatId: e.detail.value })
   },

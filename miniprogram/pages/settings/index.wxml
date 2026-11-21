@@ -5,6 +5,16 @@
   </view>
 
   <view class="panel">
+    <view class="row" bindtap="onOpenMyProperties">
+      <view>
+        <text class="row-title">我的房源</text>
+        <text class="row-sub">管理已发布房源，确认是否仍可租</text>
+      </view>
+      <text class="chev">›</text>
+    </view>
+  </view>
+
+  <view class="panel">
     <view class="row">
       <view>
         <text class="row-title">手机号</text>

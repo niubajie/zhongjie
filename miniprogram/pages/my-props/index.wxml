@@ -1,0 +1,35 @@
+<view class="my-page">
+  <view class="tabs">
+    <view class="tab {{filter === 'all' ? 'on' : ''}}" data-filter="all" bindtap="onFilter">全部</view>
+    <view class="tab {{filter === 'need' ? 'on' : ''}}" data-filter="need" bindtap="onFilter">待确认</view>
+  </view>
+
+  <view class="state" wx:if="{{loading}}">加载中…</view>
+  <view class="state" wx:elif="{{!items.length}}">{{message || '暂无房源'}}</view>
+
+  <block wx:else>
+    <view
+      class="card"
+      wx:for="{{items}}"
+      wx:key="uuid"
+      wx:if="{{filter === 'all' || item.needsConfirm}}"
+    >
+      <view class="card-head" bindtap="onOpen" data-uuid="{{item.uuid}}">
+        <view class="card-title">{{item.title}}</view>
+        <view class="badge badge-{{item.status}}">{{item.statusText}}</view>
+      </view>
+      <view class="card-sub" bindtap="onOpen" data-uuid="{{item.uuid}}">
+        {{item.communityName || '小区待核验'}} · {{item.areaSqm}}㎡ · {{item.rentYuan}} 元/月
+      </view>
+      <view class="card-meta">
+        <text wx:if="{{item.lastConfirmedAt}}">上次确认：{{item.lastConfirmedAt}}</text>
+        <text wx:else>尚未确认过</text>
+      </view>
+      <view class="tip" wx:if="{{item.needsConfirm}}">超过 30 天未确认，请告知是否仍可租</view>
+      <view class="actions" wx:if="{{item.status === 'active' || item.status === 'pending' || item.needsConfirm}}">
+        <button class="ghost" data-uuid="{{item.uuid}}" data-available="1" bindtap="onConfirm">仍可租</button>
+        <button class="danger" data-uuid="{{item.uuid}}" data-available="0" bindtap="onConfirm">已租出</button>
+      </view>
+    </view>
+  </block>
+</view>

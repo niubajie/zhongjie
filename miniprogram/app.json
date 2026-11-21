@@ -6,6 +6,7 @@
     "pages/publish/index",
     "pages/assistant/index",
     "pages/settings/index",
+    "pages/my-props/index",
     "pages/import/index"
   ],
   "window": {

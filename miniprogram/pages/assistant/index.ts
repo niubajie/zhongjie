@@ -5,6 +5,8 @@ import {
   getAssistantRecommendations,
   getNarration,
   getTour,
+  getVoiceStatus,
+  voiceTurn,
 } from '../../utils/api'
 import { getToken } from '../../utils/session'
 import type { AssistantItem, NarrationSegment, Tour } from '../../types/api'
@@ -36,6 +38,9 @@ interface AssistantPageData {
   tour: Tour | null
   playing: boolean
   ready: boolean
+  voiceState: 'idle' | 'recording' | 'thinking' | 'playing'
+  voiceHint: string
+  voiceReady: boolean
 }
 
 Page<AssistantPageData, WechatMiniprogram.Page.CustomOption>({
@@ -61,16 +66,149 @@ Page<AssistantPageData, WechatMiniprogram.Page.CustomOption>({
     tour: null,
     playing: true,
     ready: false,
+    voiceState: 'idle',
+    voiceHint: '点麦克风说话，小亿会边听边答',
+    voiceReady: false,
   },
 
   autoTimer: 0 as number,
+  recorder: null as WechatMiniprogram.RecorderManager | null,
+  audioPlayer: null as WechatMiniprogram.InnerAudioContext | null,
+  audioQueue: [] as string[],
+  audioIndex: 0,
 
   onLoad() {
     this.createSession()
+    this.initVoice()
   },
 
   onUnload() {
     this.stopTimer()
+    this.stopAudio()
+    if (this.recorder) {
+      this.recorder.stop()
+    }
+  },
+
+  initVoice() {
+    const recorder = wx.getRecorderManager()
+    recorder.onStop((res) => {
+      if (res.tempFilePath) {
+        this.uploadVoice(res.tempFilePath)
+      } else {
+        this.setData({ voiceState: 'idle' })
+      }
+    })
+    recorder.onError(() => {
+      this.setData({ voiceState: 'idle', voiceHint: '录音失败，请检查麦克风权限' })
+    })
+    this.recorder = recorder
+
+    const audio = wx.createInnerAudioContext()
+    audio.onEnded(() => this.playNextAudio())
+    audio.onError(() => this.stopAudio())
+    this.audioPlayer = audio
+
+    getVoiceStatus()
+      .then((status) => {
+        this.setData({
+          voiceReady: status.asr && status.tts,
+          voiceHint: status.hint,
+        })
+      })
+      .catch(() => this.setData({ voiceHint: '语音状态未知，可继续用文字' }))
+  },
+
+  onVoiceTap() {
+    const state = this.data.voiceState
+    if (state === 'recording') {
+      this.recorder?.stop()
+      return
+    }
+    if (state === 'thinking') {
+      return
+    }
+    if (state === 'playing') {
+      // Barge-in: stop the current reply immediately, then listen.
+      this.stopAudio()
+    }
+    if (!this.data.voiceReady) {
+      wx.showToast({ title: this.data.voiceHint || '语音未配置', icon: 'none' })
+      return
+    }
+    this.recorder?.start({
+      duration: 60000,
+      sampleRate: 16000,
+      numberOfChannels: 1,
+      encodeBitRate: 48000,
+      format: 'mp3',
+    })
+    this.setData({ voiceState: 'recording', voiceHint: '正在听…再次点击结束' })
+  },
+
+  uploadVoice(filePath: string) {
+    if (!this.data.sessionId) {
+      this.setData({ voiceState: 'idle' })
+      return
+    }
+    this.setData({ voiceState: 'thinking', voiceHint: '小亿正在理解…' })
+    voiceTurn(this.data.sessionId, filePath)
+      .then((result) => {
+        const messages = [...this.data.messages]
+        if (result.transcript) {
+          messages.push({ role: 'user', text: result.transcript })
+        }
+        messages.push({ role: 'robot', text: result.reply })
+        this.setData({
+          messages,
+          ready: result.ready,
+          voiceState: 'idle',
+          voiceHint: '点麦克风继续聊',
+        })
+        if (result.action === 'recommend') {
+          this.loadRecommendations()
+        }
+        this.playAudios(result.audioUrls)
+      })
+      .catch((err: Error) => {
+        this.setData({ voiceState: 'idle', voiceHint: err.message || '语音请求失败' })
+      })
+  },
+
+  playAudios(urls: string[]) {
+    if (!urls.length || !this.audioPlayer) {
+      return
+    }
+    this.audioQueue = urls
+    this.audioIndex = 0
+    this.playNextAudio()
+  },
+
+  playNextAudio() {
+    const audio = this.audioPlayer
+    if (!audio || this.audioIndex >= this.audioQueue.length) {
+      this.audioQueue = []
+      this.audioIndex = 0
+      if (this.data.voiceState === 'playing') {
+        this.setData({ voiceState: 'idle' })
+      }
+      return
+    }
+    audio.src = this.audioQueue[this.audioIndex]
+    this.audioIndex += 1
+    this.setData({ voiceState: 'playing' })
+    audio.play()
+  },
+
+  stopAudio() {
+    if (this.audioPlayer) {
+      this.audioPlayer.stop()
+    }
+    this.audioQueue = []
+    this.audioIndex = 0
+    if (this.data.voiceState === 'playing') {
+      this.setData({ voiceState: 'idle' })
+    }
   },
 
   createSession() {

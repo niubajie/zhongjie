@@ -7,7 +7,7 @@
         <button class="settings-link" bindtap="onSettings">联系方式</button>
       </view>
     </view>
-    <text class="sub">选择工业园区/写字楼，填写面积和月租；命中楼宇后直接上架。</text>
+    <text class="sub">选择小区，填写面积和月租；小区核验通过后自动上架。</text>
   </view>
 
   <view class="panel" wx:if="{{!canPublish}}">
@@ -17,11 +17,11 @@
 
   <view class="panel" wx:if="{{canPublish}}">
     <view class="field">
-      <text class="field-label">工业园区 / 写字楼</text>
+      <text class="field-label">小区</text>
       <input
         class="field-input"
         value="{{keyword}}"
-        placeholder="输入楼宇名，例如：科兴科学园"
+        placeholder="输入小区名，例如：海岸城花园"
         bindinput="onKeywordInput"
       />
       <text class="hint" wx:if="{{searching}}">搜索中…</text>
@@ -31,7 +31,7 @@
           wx:for="{{suggestions}}"
           wx:key="uuid"
           data-uuid="{{item.uuid}}"
-          bindtap="onSelectBuilding"
+          bindtap="onSelectCommunity"
         >
           <text class="suggestion-name">{{item.name}}</text>
           <text class="suggestion-meta">{{item.districtName}} · {{item.streetName}}</text>
@@ -39,7 +39,7 @@
       </view>
       <view class="selected" wx:if="{{selected}}">
         <text class="selected-name">{{selected.name}}</text>
-        <text class="selected-meta">已选择 · {{selected.buildingType === 'industrial_park' ? '工业园区' : '写字楼'}}</text>
+        <text class="selected-meta">已选择 · {{selected.communityType === 'apartment' ? '公寓' : '住宅小区'}}</text>
       </view>
     </view>
 
@@ -85,6 +85,6 @@
     <button class="primary-btn" bindtap="onSubmit" disabled="{{loading}}">
       {{loading ? '发布中…' : '发布房源'}}
     </button>
-    <text class="privacy">公开页面只展示区/街道；楼宇名仅用于核验，不对外展示。</text>
+    <text class="privacy">公开页面只展示区/街道；小区名仅用于核验，不对外展示。</text>
   </view>
 </view>

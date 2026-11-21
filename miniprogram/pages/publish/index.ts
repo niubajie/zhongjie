@@ -1,13 +1,13 @@
-import { createProperty, getMe, suggestBuildings } from '../../utils/api'
+import { createProperty, getMe, suggestCommunities } from '../../utils/api'
 import { getToken } from '../../utils/session'
-import type { BuildingSuggest } from '../../types/api'
+import type { CommunitySuggest } from '../../types/api'
 
 interface PublishPageData {
   role: string
   canPublish: boolean
   keyword: string
-  suggestions: BuildingSuggest[]
-  selected: BuildingSuggest | null
+  suggestions: CommunitySuggest[]
+  selected: CommunitySuggest | null
   area: string
   rentYuan: string
   layout: string
@@ -75,12 +75,12 @@ Page<PublishPageData, WechatMiniprogram.Page.CustomOption>({
 
   search(keyword: string) {
     this.setData({ searching: true })
-    suggestBuildings('440300', keyword)
+    suggestCommunities('440300', keyword)
       .then((items) => this.setData({ suggestions: items, searching: false }))
-      .catch((err: Error) => this.setData({ searching: false, message: err.message || '楼宇加载失败' }))
+      .catch((err: Error) => this.setData({ searching: false, message: err.message || '小区加载失败' }))
   },
 
-  onSelectBuilding(e: { currentTarget: { dataset: { uuid: string } } }) {
+  onSelectCommunity(e: { currentTarget: { dataset: { uuid: string } } }) {
     const uuid = e.currentTarget.dataset.uuid
     const selected = this.data.suggestions.find((item) => item.uuid === uuid) || null
     this.setData({ selected })
@@ -127,7 +127,7 @@ Page<PublishPageData, WechatMiniprogram.Page.CustomOption>({
       return
     }
     if (!this.data.selected) {
-      this.setData({ message: '请先选择工业园区或写字楼' })
+      this.setData({ message: '请先选择小区' })
       return
     }
     const area = Number(this.data.area)
@@ -143,7 +143,7 @@ Page<PublishPageData, WechatMiniprogram.Page.CustomOption>({
 
     this.setData({ loading: true, message: '' })
     createProperty({
-      buildingUuid: this.data.selected.uuid,
+      communityUuid: this.data.selected.uuid,
       areaSqm: area,
       rentCents: Math.round(rentYuan * 100),
       layout: this.data.layout,
@@ -154,7 +154,7 @@ Page<PublishPageData, WechatMiniprogram.Page.CustomOption>({
     })
       .then((created) => {
         this.setData({ loading: false })
-        const text = created.status === 'active' ? '发布成功' : '已提交，等待审核'
+        const text = created.status === 'active' ? '发布成功' : '小区待核验，已转人工审核'
         wx.showToast({ title: text, icon: 'success' })
         setTimeout(() => wx.navigateBack(), 600)
       })
