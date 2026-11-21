@@ -12,6 +12,7 @@ import (
 	"housing/internal/db"
 	"housing/internal/freshness"
 	"housing/internal/notify"
+	"housing/internal/prospect"
 	"housing/internal/secure"
 	"housing/internal/wechat"
 )
@@ -40,6 +41,7 @@ func main() {
 	notifyRepo := notify.NewRepository(pool)
 	notifySvc := notify.NewService(notifyRepo, pii, wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret),
 		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage, cfg.NotifyFields)
+	ingestor := prospect.NewDefaultIngestor(prospect.NewRepository(pool), pii, log.Printf)
 
 	runFreshness := func() {
 		n, err := freshRepo.CreateDueChecks(context.Background())
@@ -61,12 +63,29 @@ func main() {
 		}
 	}
 
+	runProspect := func() {
+		stats, err := ingestor.RunOnce(context.Background())
+		if err != nil {
+			log.Printf("prospect run failed: %v", err)
+			return
+		}
+		if stats.Halted {
+			return
+		}
+		if stats.Fetched > 0 || stats.Ingested > 0 || stats.Failed > 0 {
+			log.Printf("prospect run: sources=%d fetched=%d ingested=%d duplicate=%d optedOut=%d invalid=%d failed=%d",
+				stats.Sources, stats.Fetched, stats.Ingested, stats.Duplicate, stats.OptedOut, stats.Invalid, stats.Failed)
+		}
+	}
+
 	runFreshness()
 	runNotify()
 	freshTicker := time.NewTicker(6 * time.Hour)
 	notifyTicker := time.NewTicker(30 * time.Second)
+	prospectTicker := time.NewTicker(10 * time.Minute)
 	defer freshTicker.Stop()
 	defer notifyTicker.Stop()
+	defer prospectTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -76,6 +95,8 @@ func main() {
 			runFreshness()
 		case <-notifyTicker.C:
 			runNotify()
+		case <-prospectTicker.C:
+			runProspect()
 		}
 	}
 }

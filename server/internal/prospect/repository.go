@@ -348,3 +348,89 @@ func (r *Repository) SoftDeleteSource(ctx context.Context, uuid string) error {
 	}
 	return nil
 }
+
+// ---- 批次 3：采集 ----
+
+// ListEnabledSources 返回已启用且未删除的信息源，供采集器逐源拉取。
+func (r *Repository) ListEnabledSources(ctx context.Context) ([]LeadSource, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, uuid::text, name, kind, COALESCE(base_url, ''), robots_ok, terms_ok,
+		       rate_limit_ms, enabled, COALESCE(review_note, ''),
+		       `+fmt.Sprintf(tsFmt, "created_at")+`, `+fmt.Sprintf(tsFmt, "updated_at")+`
+		FROM lead_sources
+		WHERE enabled = true AND deleted_at IS NULL
+		ORDER BY id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list enabled lead sources: %w", err)
+	}
+	defer rows.Close()
+	out := []LeadSource{}
+	for rows.Next() {
+		var s LeadSource
+		if err := rows.Scan(&s.ID, &s.UUID, &s.Name, &s.Kind, &s.BaseURL, &s.RobotsOK, &s.TermsOK,
+			&s.RateLimitMs, &s.Enabled, &s.ReviewNote, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// LeadExistsByContactHash 判断同一联系方式（同 lead_type）是否已入库，用于跨平台去重。
+func (r *Repository) LeadExistsByContactHash(ctx context.Context, contactHash []byte, leadType string) (bool, error) {
+	var exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM prospect_leads
+			WHERE contact_hash = $1 AND lead_type = $2 AND deleted_at IS NULL
+		)
+	`, contactHash, leadType).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check lead contact hash: %w", err)
+	}
+	return exists, nil
+}
+
+// ListRecentSelfOwned 读取自有留资（租客在站内对房源发起的联系），作为零合规风险的采集源。
+// external_post_id 复用 contact_requests.uuid，重复扫描由唯一索引幂等去重。
+func (r *Repository) ListRecentSelfOwned(ctx context.Context, limit int) ([]RawPost, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT cr.uuid::text, u.phone_hash, p.city_code, p.district_code,
+		       COALESCE(p.rent_cents, 0), COALESCE(p.area_sqm, 0), COALESCE(p.layout, ''),
+		       p.title_public
+		FROM contact_requests cr
+		JOIN users u ON u.id = cr.tenant_id
+		JOIN properties p ON p.id = cr.property_id
+		WHERE u.deleted_at IS NULL
+		ORDER BY cr.id DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list self-owned contact requests: %w", err)
+	}
+	defer rows.Close()
+	out := []RawPost{}
+	for rows.Next() {
+		var post RawPost
+		var phoneHash []byte
+		var title string
+		if err := rows.Scan(&post.ExternalPostID, &phoneHash, &post.CityCode, &post.DistrictCode,
+			&post.BudgetCents, &post.AreaSqm, &post.Layout, &title); err != nil {
+			return nil, err
+		}
+		post.Platform = SourceKindSelfOwned
+		post.LeadType = LeadTypeTenant
+		post.ContactHash = phoneHash
+		post.ContactChannel = ChannelUnknown
+		if len(phoneHash) > 0 {
+			post.ContactChannel = ChannelPhone
+		}
+		post.RawText = "站内咨询房源：" + title
+		out = append(out, post)
+	}
+	return out, rows.Err()
+}

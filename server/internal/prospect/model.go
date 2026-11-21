@@ -55,13 +55,21 @@ const (
 
 // 联系渠道与方向（首条联系 100% 人工审核）
 const (
-	ChannelInApp  = "in_app"
-	ChannelSMS    = "sms"
-	ChannelWeChat = "wechat"
-	ChannelPhone  = "phone"
+	ChannelInApp   = "in_app"
+	ChannelSMS     = "sms"
+	ChannelWeChat  = "wechat"
+	ChannelPhone   = "phone"
+	ChannelUnknown = "unknown"
 
 	DirectionOutbound = "outbound"
 	DirectionInbound  = "inbound"
+)
+
+// 信息源类型（与 lead_sources.kind 的 CHECK 约束一致）。
+const (
+	SourceKindSelfOwned        = "self_owned"
+	SourceKindPublicAPI        = "public_api"
+	SourceKindThirdPartyScrape = "third_party_scrape"
 )
 
 // 终态：进入后不可再转换
