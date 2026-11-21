@@ -422,7 +422,9 @@ func extractAudio(ctx context.Context, video []byte, ext string) ([]byte, error)
 	if err := os.WriteFile(input, video, 0o600); err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, ffmpeg, "-y", "-i", input, "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", output)
+	runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(runCtx, ffmpeg, "-y", "-i", input, "-t", "300", "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", output)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return nil, fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(string(out)))
 	}

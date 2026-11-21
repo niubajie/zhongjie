@@ -153,7 +153,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    Promise.all([
+    Promise.allSettled([
       fetchAdminStats(session.token),
       fetchAdminProperties(session.token),
       fetchAdminImports(session.token),
@@ -163,34 +163,22 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       fetchAdminIntakeDrafts(session.token),
       fetchAdminAuditLogs(session.token),
     ])
-      .then(
-        ([
-          nextStats,
-          nextProperties,
-          nextImports,
-          nextBuildings,
-          nextContacts,
-          nextFreshness,
-          nextDrafts,
-          nextAuditLogs,
-        ]) => {
-          if (!cancelled) {
-            setStats(nextStats)
-            setProperties(nextProperties)
-            setImports(nextImports)
-            setBuildings(nextBuildings)
-            setContacts(nextContacts)
-            setFreshness(nextFreshness)
-            setDrafts(nextDrafts)
-            setAuditLogs(nextAuditLogs)
-            setError('')
-          }
-        },
-      )
-      .catch((err: Error) => {
-        if (!cancelled) {
-          setError(err.message || '数据加载失败')
+      .then((results) => {
+        if (cancelled) {
+          return
         }
+        const [statsR, propertiesR, importsR, buildingsR, contactsR, freshnessR, draftsR, auditR] =
+          results
+        if (statsR.status === 'fulfilled') setStats(statsR.value)
+        if (propertiesR.status === 'fulfilled') setProperties(propertiesR.value)
+        if (importsR.status === 'fulfilled') setImports(importsR.value)
+        if (buildingsR.status === 'fulfilled') setBuildings(buildingsR.value)
+        if (contactsR.status === 'fulfilled') setContacts(contactsR.value)
+        if (freshnessR.status === 'fulfilled') setFreshness(freshnessR.value)
+        if (draftsR.status === 'fulfilled') setDrafts(draftsR.value)
+        if (auditR.status === 'fulfilled') setAuditLogs(auditR.value)
+        const failed = results.filter((result) => result.status === 'rejected')
+        setError(failed.length > 0 ? `${failed.length} 个区块加载失败，其余数据仍可查看` : '')
       })
       .finally(() => {
         if (!cancelled) {
