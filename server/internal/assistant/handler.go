@@ -24,6 +24,7 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 	r.GET("/assistant/recommendations", h.recommendations)
 	r.GET("/properties/:uuid/narration", h.narration)
 	r.GET("/properties/:uuid/tour", h.tour)
+	h.RegisterVoice(r)
 }
 
 func (h *Handler) createSession(c *gin.Context) {

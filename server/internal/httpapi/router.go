@@ -10,6 +10,7 @@ import (
 	"housing/internal/assistant"
 	"housing/internal/auth"
 	"housing/internal/building"
+	"housing/internal/community"
 	"housing/internal/config"
 	"housing/internal/contact"
 	"housing/internal/freshness"
@@ -17,19 +18,23 @@ import (
 	"housing/internal/importjob"
 	"housing/internal/intake"
 	"housing/internal/property"
+	"housing/internal/storage"
 	"housing/internal/user"
 )
 
 type Handlers struct {
-	User      *user.Handler
-	Property  *property.Handler
-	Building  *building.Handler
-	Contact   *contact.Handler
-	Freshness *freshness.Handler
-	Assistant *assistant.Handler
-	Import    *importjob.Handler
-	Intake    *intake.Handler
-	Admin     *admin.Handler
+	User            *user.Handler
+	Property        *property.Handler
+	Building        *building.Handler
+	Community       *community.Handler
+	Contact         *contact.Handler
+	Freshness       *freshness.Handler
+	Assistant       *assistant.Handler
+	Import          *importjob.Handler
+	Intake          *intake.Handler
+	Admin           *admin.Handler
+	Media           *storage.Service
+	AllowLocalMedia bool
 }
 
 func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr *auth.Manager, handlers Handlers) *gin.Engine {
@@ -43,6 +48,11 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr 
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
+	// Local development stores uploads outside COS; production never mounts this.
+	if handlers.AllowLocalMedia && handlers.Media != nil && handlers.Media.Local() {
+		r.Static("/media", handlers.Media.LocalDir())
+	}
+
 	v1 := r.Group("/v1")
 	handlers.User.RegisterPublic(v1)
 	handlers.Property.Register(v1)
@@ -51,6 +61,9 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr 
 	}
 	if handlers.Building != nil {
 		handlers.Building.Register(v1)
+	}
+	if handlers.Community != nil {
+		handlers.Community.Register(v1)
 	}
 	if handlers.Admin != nil {
 		handlers.Admin.RegisterPublic(v1)
@@ -62,6 +75,9 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr 
 		}
 		if handlers.Intake != nil {
 			handlers.Intake.RegisterAdmin(adminGroup)
+		}
+		if handlers.Community != nil {
+			handlers.Community.RegisterAdmin(adminGroup)
 		}
 	}
 

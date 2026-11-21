@@ -39,7 +39,7 @@ func main() {
 	freshRepo := freshness.NewRepository(pool)
 	notifyRepo := notify.NewRepository(pool)
 	notifySvc := notify.NewService(notifyRepo, pii, wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret),
-		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage)
+		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage, cfg.NotifyFields)
 
 	runFreshness := func() {
 		n, err := freshRepo.CreateDueChecks(context.Background())

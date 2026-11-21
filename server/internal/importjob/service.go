@@ -4,18 +4,18 @@ import (
 	"context"
 	"strings"
 
-	"housing/internal/building"
+	"housing/internal/community"
 	"housing/internal/property"
 )
 
 type Service struct {
-	repo       *Repository
-	properties *property.Service
-	buildings  *building.Service
+	repo        *Repository
+	properties  *property.Service
+	communities *community.Service
 }
 
-func NewService(repo *Repository, properties *property.Service, buildings *building.Service) *Service {
-	return &Service{repo: repo, properties: properties, buildings: buildings}
+func NewService(repo *Repository, properties *property.Service, communities *community.Service) *Service {
+	return &Service{repo: repo, properties: properties, communities: communities}
 }
 
 func (s *Service) Import(ctx context.Context, landlordID int64, in FileInput) (Result, error) {
@@ -36,19 +36,19 @@ func (s *Service) Import(ctx context.Context, landlordID int64, in FileInput) (R
 
 	success, failed := 0, 0
 	for i, row := range rows {
-		b, err := s.buildings.FindByName(ctx, "440300", row.BuildingName)
+		c, err := s.communities.FindByName(ctx, "440300", row.CommunityName)
 		if err != nil {
 			failed++
-			_ = s.repo.AddDraft(ctx, jobID, i+1, row, "error", "楼宇未匹配: "+row.BuildingName, "")
+			_ = s.repo.AddDraft(ctx, jobID, i+1, row, "error", "小区未匹配: "+row.CommunityName, "")
 			continue
 		}
 		created, err := s.properties.Create(ctx, landlordID, property.CreateInput{
-			BuildingUUID: b.UUID,
-			AreaSqm:      row.AreaSqm,
-			RentCents:    int64(row.RentYuan * 100),
-			Layout:       row.Layout,
-			Title:        row.Title,
-			Description:  "从文档导入",
+			CommunityUUID: c.UUID,
+			AreaSqm:       row.AreaSqm,
+			RentCents:     int64(row.RentYuan * 100),
+			Layout:        row.Layout,
+			Title:         row.Title,
+			Description:   "从文档导入",
 		})
 		if err != nil {
 			failed++

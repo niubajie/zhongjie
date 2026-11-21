@@ -223,6 +223,17 @@ func (s *Service) ListContacts(ctx context.Context, limit int) ([]ContactRow, er
 	return s.repo.ListContacts(ctx, limit)
 }
 
+func (s *Service) GetContact(ctx context.Context, uuid string) (ContactDetail, error) {
+	return s.repo.GetContact(ctx, strings.TrimSpace(uuid))
+}
+
+func (s *Service) ListAuditLogs(ctx context.Context, limit int) ([]AuditLogRow, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	return s.repo.ListAuditLogs(ctx, limit)
+}
+
 func (s *Service) ListFreshness(ctx context.Context, limit int) ([]FreshnessRow, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50

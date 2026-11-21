@@ -9,6 +9,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"housing/internal/modelgw"
+	"housing/internal/storage"
 )
 
 var (
@@ -19,11 +22,62 @@ var (
 )
 
 type Service struct {
-	repo *Repository
+	repo  *Repository
+	gw    *modelgw.Gateway
+	media *storage.Service
 }
 
-func NewService(repo *Repository) *Service {
-	return &Service{repo: repo}
+func NewService(repo *Repository, gw *modelgw.Gateway, media *storage.Service) *Service {
+	return &Service{repo: repo, gw: gw, media: media}
+}
+
+type VoiceStatus struct {
+	Engine string `json:"engine"`
+	ASR    bool   `json:"asr"`
+	TTS    bool   `json:"tts"`
+	LLM    bool   `json:"llm"`
+	Hint   string `json:"hint"`
+}
+
+func (s *Service) VoiceStatus() VoiceStatus {
+	status := VoiceStatus{Engine: "half-duplex", Hint: "文字与小亿推荐可用；语音需要配置模型网关"}
+	if s.gw == nil {
+		return status
+	}
+	st := s.gw.Status()
+	status.ASR, status.TTS, status.LLM = st.ASR, st.TTS, st.LLM
+	if st.ASR && st.TTS {
+		status.Hint = "语音已就绪，可随时打断"
+	} else {
+		status.Hint = "语音未配置完整，请设置 MODELGW_ASR_* 与 MODELGW_TTS_*"
+	}
+	return status
+}
+
+func (s *Service) Transcribe(ctx context.Context, audio []byte, mime string) (string, error) {
+	if s.gw == nil {
+		return "", modelgw.ErrNotConfigured
+	}
+	return s.gw.Transcribe(ctx, audio, mime)
+}
+
+// Speak synthesizes one sentence and returns a playable URL.
+func (s *Service) Speak(ctx context.Context, seq int, text string) (string, error) {
+	if s.gw == nil {
+		return "", modelgw.ErrNotConfigured
+	}
+	if s.media == nil {
+		return "", errors.New("media storage is not configured")
+	}
+	audio, _, err := s.gw.Synthesize(ctx, text)
+	if err != nil {
+		return "", err
+	}
+	key := fmt.Sprintf("assistant/tts/%d_%d.mp3", seq, len(text))
+	if err := s.media.Put(ctx, key, audio, "audio/mpeg"); err != nil {
+		return "", err
+	}
+	return s.media.URL(key), nil
 }
 
 func (s *Service) CreateSession(ctx context.Context) (Session, error) {
@@ -60,6 +114,18 @@ func (s *Service) Message(ctx context.Context, in MessageInput) (MessageReply, e
 		return MessageReply{}, err
 	}
 	reply, action := buildReply(slots, ready)
+	if s.gw != nil && s.gw.Status().LLM {
+		polished, err := s.gw.Chat(ctx, []modelgw.Message{
+			{Role: "system", Content: "你是房产导购小亿，语气亲切、简短，一次只说一到两句，不要编造房源，不要询问或复述手机号。"},
+			{Role: "user", Content: text},
+		})
+		if err == nil && strings.TrimSpace(polished) != "" {
+			if r := []rune(strings.TrimSpace(polished)); len(r) > 120 {
+				polished = string(r[:120])
+			}
+			reply = polished
+		}
+	}
 	return MessageReply{
 		SessionID: in.SessionID,
 		Reply:     reply,

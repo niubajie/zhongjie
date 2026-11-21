@@ -32,6 +32,8 @@ func (h *Handler) RegisterAuth(r *gin.RouterGroup) {
 	r.GET("/buildings", h.buildings)
 	r.POST("/buildings", h.createBuilding)
 	r.GET("/contacts", h.contacts)
+	r.GET("/contacts/:uuid", h.contactDetail)
+	r.GET("/audit-logs", h.auditLogs)
 	r.GET("/freshness", h.freshness)
 	r.POST("/auth/totp/setup", h.setupTOTP)
 	r.POST("/auth/totp/enable", h.enableTOTP)
@@ -219,6 +221,28 @@ func (h *Handler) contacts(c *gin.Context) {
 	items, err := h.svc.ListContacts(c.Request.Context(), queryLimit(c, 50))
 	if err != nil {
 		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "联系记录加载失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *Handler) contactDetail(c *gin.Context) {
+	item, err := h.svc.GetContact(c.Request.Context(), c.Param("uuid"))
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, "联系记录不存在")
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "联系记录加载失败")
+		return
+	}
+	httpx.OK(c, item)
+}
+
+func (h *Handler) auditLogs(c *gin.Context) {
+	items, err := h.svc.ListAuditLogs(c.Request.Context(), queryLimit(c, 100))
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "审计日志加载失败")
 		return
 	}
 	httpx.OK(c, gin.H{"items": items})

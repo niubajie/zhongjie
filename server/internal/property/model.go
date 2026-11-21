@@ -48,21 +48,55 @@ type MapResult struct {
 
 type Image struct {
 	ObjectKey string `json:"objectKey"`
+	URL       string `json:"url,omitempty"`
 	Width     int    `json:"width,omitempty"`
 	Height    int    `json:"height,omitempty"`
 	Sort      int    `json:"sort"`
 }
 
+// MineItem is one row of the landlord's own listing list.
+type MineItem struct {
+	UUID            string  `json:"uuid"`
+	Title           string  `json:"title"`
+	CommunityName   string  `json:"communityName,omitempty"`
+	Status          string  `json:"status"`
+	PendingReason   string  `json:"pendingReason,omitempty"`
+	AreaSqm         float64 `json:"areaSqm"`
+	RentCents       int64   `json:"rentCents"`
+	LastConfirmedAt string  `json:"lastConfirmedAt,omitempty"`
+	CreatedAt       string  `json:"createdAt"`
+	NeedsConfirm    bool    `json:"needsConfirm"`
+}
+
 type CreateInput struct {
-	BuildingUUID string   `json:"buildingUuid"`
-	AreaSqm      float64  `json:"areaSqm"`
-	RentCents    int64    `json:"rentCents"`
-	Layout       string   `json:"layout"`
-	Floor        string   `json:"floor"`
-	Orientation  string   `json:"orientation"`
-	Title        string   `json:"title"`
-	Description  string   `json:"description"`
-	ImageKeys    []string `json:"imageKeys"`
+	CommunityUUID string   `json:"communityUuid"`
+	CommunityName string   `json:"communityName"`
+	BuildingUUID  string   `json:"buildingUuid"`
+	AreaSqm       float64  `json:"areaSqm"`
+	RentCents     int64    `json:"rentCents"`
+	Layout        string   `json:"layout"`
+	Floor         string   `json:"floor"`
+	Orientation   string   `json:"orientation"`
+	Title         string   `json:"title"`
+	Description   string   `json:"description"`
+	ImageKeys     []string `json:"imageKeys"`
+}
+
+// PublishPlace is the resolved location of a listing. Residential listings set
+// CommunityID; legacy non-residential listings may set BuildingID instead.
+type PublishPlace struct {
+	CityCode      string
+	DistrictCode  string
+	DistrictName  string
+	StreetCode    string
+	StreetName    string
+	Lat           float64
+	Lng           float64
+	BuildingID    *int64
+	BuildingName  string
+	BuildingType  string
+	CommunityID   *int64
+	CommunityName string
 }
 
 type Created struct {

@@ -60,8 +60,8 @@ func parseXLSX(data []byte) ([]Row, error) {
 
 	out := make([]Row, 0, len(rows)-1)
 	for _, row := range rows[1:] {
-		building := col(row, "楼宇", "楼宇名称", "大厦", "园区", "项目")
-		if building == "" {
+		community := col(row, "小区", "小区名称", "楼盘", "社区", "楼宇", "大厦", "园区", "项目")
+		if community == "" {
 			continue
 		}
 		area := parseNumber(col(row, "面积", "建筑面积"))
@@ -70,11 +70,11 @@ func parseXLSX(data []byte) ([]Row, error) {
 			continue
 		}
 		out = append(out, Row{
-			BuildingName: building,
-			AreaSqm:      area,
-			RentYuan:     rent,
-			Layout:       col(row, "户型", "房型"),
-			Title:        col(row, "标题", "房源标题"),
+			CommunityName: community,
+			AreaSqm:       area,
+			RentYuan:      rent,
+			Layout:        col(row, "户型", "房型"),
+			Title:         col(row, "标题", "房源标题"),
 		})
 	}
 	if len(out) == 0 {
@@ -142,8 +142,8 @@ func parseDOCX(data []byte) ([]Row, error) {
 			continue
 		}
 		switch {
-		case hasPrefix(line, "楼宇", "大厦", "园区", "项目"):
-			row.BuildingName = valueAfterColon(line)
+		case hasPrefix(line, "小区", "楼盘", "社区", "楼宇", "大厦", "园区", "项目"):
+			row.CommunityName = valueAfterColon(line)
 		case hasPrefix(line, "面积"):
 			row.AreaSqm = parseNumber(valueAfterColon(line))
 		case hasPrefix(line, "租金", "月租", "价格"):
@@ -154,7 +154,7 @@ func parseDOCX(data []byte) ([]Row, error) {
 			row.Title = valueAfterColon(line)
 		}
 	}
-	if row.BuildingName == "" || row.AreaSqm <= 0 || row.RentYuan <= 0 {
+	if row.CommunityName == "" || row.AreaSqm <= 0 || row.RentYuan <= 0 {
 		return nil, ErrNoRows
 	}
 	return []Row{row}, nil

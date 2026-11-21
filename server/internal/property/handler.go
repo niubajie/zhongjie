@@ -26,6 +26,27 @@ func (h *Handler) Register(r *gin.RouterGroup) {
 
 func (h *Handler) RegisterAuth(r *gin.RouterGroup) {
 	r.POST("/landlord/properties", h.createHandler)
+	r.GET("/landlord/properties", h.mineHandler)
+}
+
+func (h *Handler) mineHandler(c *gin.Context) {
+	userID := httpx.CurrentUserID(c)
+	if userID == 0 {
+		httpx.Fail(c, http.StatusUnauthorized, httpx.CodeUnauthenticated, "请先登录")
+		return
+	}
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	items, err := h.svc.ListMine(c.Request.Context(), userID, limit)
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "房源加载失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
 }
 
 func (h *Handler) createHandler(c *gin.Context) {
@@ -46,6 +67,10 @@ func (h *Handler) createHandler(c *gin.Context) {
 			httpx.Fail(c, http.StatusForbidden, httpx.CodeForbidden, "只有房东可以发布房源")
 		case errors.Is(err, ErrBuildingNotFound):
 			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "楼宇不存在或未通过审核")
+		case errors.Is(err, ErrCommunityNotFound):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "小区不存在或未通过审核")
+		case errors.Is(err, ErrCommunityRequired):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请选择小区后再发布")
 		case errors.Is(err, ErrInvalidInput):
 			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
 		default:

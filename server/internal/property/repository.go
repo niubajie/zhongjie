@@ -126,3 +126,33 @@ func (r *Repository) Detail(ctx context.Context, uuid string) (Detail, error) {
 	}
 	return d, rows.Err()
 }
+
+// ListByLandlord returns the landlord's own listings with freshness state.
+func (r *Repository) ListByLandlord(ctx context.Context, landlordID int64, limit int) ([]MineItem, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT uuid::text, title_public, COALESCE(community_name, ''), status,
+		       COALESCE(pending_reason, ''), area_sqm::float8, rent_cents,
+		       COALESCE(to_char(last_confirmed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), ''),
+		       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+		       (status = 'active' AND (last_confirmed_at IS NULL OR last_confirmed_at < now() - interval '30 days'))
+		FROM properties
+		WHERE landlord_id = $1 AND deleted_at IS NULL
+		ORDER BY last_confirmed_at DESC NULLS LAST, created_at DESC
+		LIMIT $2
+	`, landlordID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list landlord properties: %w", err)
+	}
+	defer rows.Close()
+	out := []MineItem{}
+	for rows.Next() {
+		var item MineItem
+		if err := rows.Scan(&item.UUID, &item.Title, &item.CommunityName, &item.Status,
+			&item.PendingReason, &item.AreaSqm, &item.RentCents,
+			&item.LastConfirmedAt, &item.CreatedAt, &item.NeedsConfirm); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}

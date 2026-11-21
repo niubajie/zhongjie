@@ -30,6 +30,34 @@ type Config struct {
 	DevLoginEnabled           bool
 	LogLevel                  string
 	AllowedAdminOrigin        string
+
+	// Model gateway (OCR/ASR/TTS/LLM). Empty base URL means not configured.
+	ModelOCRBaseURL string
+	ModelOCRApiKey  string
+	ModelOCRModel   string
+	ModelASRBaseURL string
+	ModelASRApiKey  string
+	ModelASRModel   string
+	ModelTTSBaseURL string
+	ModelTTSApiKey  string
+	ModelTTSModel   string
+	ModelTTSVoice   string
+	ModelLLMBaseURL string
+	ModelLLMApiKey  string
+	ModelLLMModel   string
+
+	// Object storage. Without COS credentials the server falls back to a local
+	// directory for development.
+	COSSecretID  string
+	COSSecretKey string
+	COSBucket    string
+	COSRegion    string
+	COSDomain    string
+	MediaDir     string
+
+	// Map of subscribe-message template fields, e.g.
+	// "thing1=reminder,thing2=title,thing3=location".
+	NotifyFields string
 }
 
 func Load() (Config, error) {
@@ -54,6 +82,28 @@ func Load() (Config, error) {
 		PIIHashKey:                os.Getenv("PII_HASH_KEY"),
 		LogLevel:                  getenv("LOG_LEVEL", "info"),
 		AllowedAdminOrigin:        getenv("ADMIN_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173"),
+
+		ModelOCRBaseURL: os.Getenv("MODELGW_OCR_BASE_URL"),
+		ModelOCRApiKey:  os.Getenv("MODELGW_OCR_API_KEY"),
+		ModelOCRModel:   getenv("MODELGW_OCR_MODEL", "ocr"),
+		ModelASRBaseURL: os.Getenv("MODELGW_ASR_BASE_URL"),
+		ModelASRApiKey:  os.Getenv("MODELGW_ASR_API_KEY"),
+		ModelASRModel:   getenv("MODELGW_ASR_MODEL", "whisper-1"),
+		ModelTTSBaseURL: os.Getenv("MODELGW_TTS_BASE_URL"),
+		ModelTTSApiKey:  os.Getenv("MODELGW_TTS_API_KEY"),
+		ModelTTSModel:   getenv("MODELGW_TTS_MODEL", "tts-1"),
+		ModelTTSVoice:   getenv("MODELGW_TTS_VOICE", "alloy"),
+		ModelLLMBaseURL: os.Getenv("MODELGW_LLM_BASE_URL"),
+		ModelLLMApiKey:  os.Getenv("MODELGW_LLM_API_KEY"),
+		ModelLLMModel:   getenv("MODELGW_LLM_MODEL", "gpt-4o-mini"),
+
+		COSSecretID:  os.Getenv("COS_SECRET_ID"),
+		COSSecretKey: os.Getenv("COS_SECRET_KEY"),
+		COSBucket:    os.Getenv("COS_BUCKET"),
+		COSRegion:    os.Getenv("COS_REGION"),
+		COSDomain:    os.Getenv("COS_DOMAIN"),
+		MediaDir:     getenv("MEDIA_DIR", "var/media"),
+		NotifyFields: os.Getenv("WECHAT_SUBSCRIBE_FIELDS"),
 	}
 
 	ttl, err := time.ParseDuration(getenv("JWT_ACCESS_TTL", defaultAccessTTL(env)))

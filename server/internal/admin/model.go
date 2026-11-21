@@ -87,6 +87,20 @@ type ContactRow struct {
 	CreatedAt       string `json:"createdAt"`
 }
 
+type ContactDetail struct {
+	ContactRow
+	Note string `json:"note,omitempty"`
+}
+
+type AuditLogRow struct {
+	ID         int64  `json:"id"`
+	ActorType  string `json:"actorType"`
+	Action     string `json:"action"`
+	TargetType string `json:"targetType"`
+	TargetID   string `json:"targetId,omitempty"`
+	CreatedAt  string `json:"createdAt"`
+}
+
 type FreshnessRow struct {
 	ID           int64  `json:"id"`
 	PropertyUUID string `json:"propertyUuid"`

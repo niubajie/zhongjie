@@ -194,6 +194,89 @@ func main() {
 		}
 	}
 
+	communities := []struct {
+		name, district, districtName, street, streetName, typ string
+		lat, lng                                              float64
+	}{
+		{"海岸城花园", "440305", "南山区", "440305006", "粤海街道", "residential", 22.5178, 113.9356},
+		{"科技园小区", "440305", "南山区", "440305006", "粤海街道", "residential", 22.5402, 113.9510},
+		{"后海花园", "440305", "南山区", "440305007", "招商街道", "residential", 22.4986, 113.9352},
+		{"香蜜湖一号", "440304", "福田区", "440304003", "福田街道", "apartment", 22.5431, 114.0249},
+	}
+	communityIDs := make(map[string]int64, len(communities))
+	for _, c := range communities {
+		var id int64
+		err := tx.QueryRow(ctx, `SELECT id FROM communities WHERE city_code='440300' AND name=$1 AND deleted_at IS NULL LIMIT 1`, c.name).Scan(&id)
+		if err != nil {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO communities (city_code, district_code, district_name, street_code, street_name, name, community_type, lat, lng, source, review_status)
+				VALUES ('440300', $1, $2, $3, $4, $5, $6, $7, $8, 'manual', 'approved')
+				RETURNING id
+			`, c.district, c.districtName, c.street, c.streetName, c.name, c.typ, c.lat, c.lng).Scan(&id)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		communityIDs[c.name] = id
+	}
+
+	residential := []struct {
+		community, title string
+		area             float64
+		rentCents        int64
+		layout, floor    string
+		orientation      string
+	}{
+		{"海岸城花园", "南山海岸城旁 89㎡ 三房 拎包入住", 89, 780000, "3室2厅", "12/28", "南"},
+		{"海岸城花园", "海岸城花园 62㎡ 两房 近地铁", 62, 560000, "2室1厅", "8/28", "东南"},
+		{"科技园小区", "科技园地铁口 76㎡ 两房 采光好", 76, 720000, "2室2厅", "15/26", "南"},
+		{"后海花园", "后海花园 120㎡ 四房 看海", 120, 1350000, "4室2厅", "20/32", "东南"},
+		{"香蜜湖一号", "香蜜湖 143㎡ 四房 豪华装修", 143, 2200000, "4室2厅", "18/30", "南"},
+	}
+	for i, l := range residential {
+		cid := communityIDs[l.community]
+		var propertyID int64
+		err := tx.QueryRow(ctx, `
+			SELECT id FROM properties
+			WHERE landlord_id = $1 AND title_public = $2 AND deleted_at IS NULL
+			LIMIT 1
+		`, landlordID, l.title).Scan(&propertyID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			err = tx.QueryRow(ctx, `
+				INSERT INTO properties (
+					landlord_id, city_code, district_code, district_name, street_code, street_name,
+					building_name, building_type, community_id, community_name,
+					lat, lng, area_sqm, rent_cents, layout, floor, orientation,
+					title_public, description_public, status, auto_publish_eligible, source_type,
+					published_at, last_confirmed_at
+				)
+				SELECT $1, '440300', c.district_code, c.district_name, c.street_code, c.street_name,
+				       c.name, c.community_type, c.id, c.name,
+				       c.lat, c.lng, $3, $4, $5, $6, $7,
+				       $8, $9, 'active', true, 'miniapp', now(), now()
+				FROM communities c WHERE c.id = $2
+				RETURNING id
+			`, landlordID, cid, l.area, l.rentCents, l.layout, l.floor, l.orientation,
+				l.title, "近地铁，采光好，可随时看房。",
+			).Scan(&propertyID)
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		for j := 0; j < 3; j++ {
+			key := fmt.Sprintf("seed/c%d_%d.jpg", i+1, j+1)
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO property_images (property_id, object_key, width, height, sort, moderation_status)
+				SELECT $1, $2, 1200, 800, $3, 'approved'
+				WHERE NOT EXISTS (
+					SELECT 1 FROM property_images WHERE property_id = $1 AND object_key = $2
+				)
+			`, propertyID, key, j); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
+
 	if _, err := tx.Exec(ctx, `
 		UPDATE properties p
 		SET district_code = b.district_code,
@@ -209,5 +292,5 @@ func main() {
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("seed complete: landlord=%d buildings=%d listings=%d", landlordID, len(buildings), len(listings))
+	log.Printf("seed complete: landlord=%d buildings=%d communities=%d listings=%d", landlordID, len(buildings), len(communities), len(listings)+len(residential))
 }

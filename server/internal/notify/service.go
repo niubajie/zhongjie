@@ -15,6 +15,7 @@ type Service struct {
 	wx         *wechat.Client
 	templateID string
 	page       string
+	fields     map[string]string
 }
 
 type Result struct {
@@ -23,8 +24,24 @@ type Result struct {
 	NotConfigured int `json:"notConfigured"`
 }
 
-func NewService(repo *Repository, pii *secure.PII, wx *wechat.Client, templateID, page string) *Service {
-	return &Service{repo: repo, pii: pii, wx: wx, templateID: templateID, page: page}
+func NewService(repo *Repository, pii *secure.PII, wx *wechat.Client, templateID, page, fieldSpec string) *Service {
+	return &Service{repo: repo, pii: pii, wx: wx, templateID: templateID, page: page, fields: parseFields(fieldSpec)}
+}
+
+func parseFields(spec string) map[string]string {
+	out := map[string]string{
+		"thing1": "reminder",
+		"thing2": "title",
+		"thing3": "location",
+	}
+	for _, pair := range strings.Split(spec, ",") {
+		parts := strings.SplitN(strings.TrimSpace(pair), "=", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+			continue
+		}
+		out[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+	}
+	return out
 }
 
 func (s *Service) Process(ctx context.Context, limit int) (Result, error) {
@@ -57,12 +74,16 @@ func (s *Service) Process(ctx context.Context, limit int) (Result, error) {
 			result.Failed++
 			continue
 		}
-		// Template field names must match the template approved in the WeChat
-		// console. These are the common "thing" fields for a contact reminder.
-		data := map[string]string{
-			"thing1": clip("租客联系提醒", 20),
-			"thing2": clip(payload.Title, 20),
-			"thing3": clip(payload.District+" "+payload.Street, 20),
+		values := map[string]string{
+			"reminder": "租客联系提醒",
+			"title":    payload.Title,
+			"district": payload.District,
+			"street":   payload.Street,
+			"location": strings.TrimSpace(payload.District + " " + payload.Street),
+		}
+		data := make(map[string]string, len(s.fields))
+		for field, source := range s.fields {
+			data[field] = clip(values[source], 20)
 		}
 		if err := s.wx.SendSubscribeMessage(ctx, openid, s.templateID, s.page, data); err != nil {
 			_ = s.repo.Mark(ctx, rec.ID, "failed", err.Error())

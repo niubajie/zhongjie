@@ -15,11 +15,11 @@ type FileInput struct {
 }
 
 type Row struct {
-	BuildingName string
-	AreaSqm      float64
-	RentYuan     float64
-	Layout       string
-	Title        string
+	CommunityName string  `json:"communityName"`
+	AreaSqm       float64 `json:"areaSqm"`
+	RentYuan      float64 `json:"rentYuan"`
+	Layout        string  `json:"layout"`
+	Title         string  `json:"title"`
 }
 
 type Result struct {

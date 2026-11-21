@@ -2,6 +2,7 @@ package contact
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -80,6 +81,7 @@ func (h *Handler) create(c *gin.Context) {
 		case errors.Is(err, ErrAlreadyContacted), errors.Is(err, ErrDailyLimit):
 			httpx.Fail(c, http.StatusTooManyRequests, httpx.CodeRateLimited, err.Error())
 		default:
+			log.Printf("contact request failed: %v", err)
 			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "联系请求失败")
 		}
 		return

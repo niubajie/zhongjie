@@ -261,6 +261,51 @@ func (r *Repository) ListContacts(ctx context.Context, limit int) ([]ContactRow,
 	return out, rows.Err()
 }
 
+func (r *Repository) GetContact(ctx context.Context, uuid string) (ContactDetail, error) {
+	var row ContactDetail
+	err := r.pool.QueryRow(ctx, `
+		SELECT cr.uuid::text, COALESCE(u.surname, ''), COALESCE(u.phone_mask, ''),
+		       p.title_public, cr.status, COALESCE(cr.note, ''),
+		       to_char(cr.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+		FROM contact_requests cr
+		JOIN users u ON u.id = cr.tenant_id
+		JOIN properties p ON p.id = cr.property_id
+		WHERE cr.uuid = $1
+	`, uuid).Scan(&row.UUID, &row.TenantSurname, &row.TenantPhoneMask,
+		&row.PropertyTitle, &row.Status, &row.Note, &row.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ContactDetail{}, ErrNotFound
+	}
+	if err != nil {
+		return ContactDetail{}, fmt.Errorf("get contact: %w", err)
+	}
+	return row, nil
+}
+
+func (r *Repository) ListAuditLogs(ctx context.Context, limit int) ([]AuditLogRow, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, actor_type, action, target_type, COALESCE(target_id, ''),
+		       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+		FROM audit_logs
+		ORDER BY created_at DESC
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list audit logs: %w", err)
+	}
+	defer rows.Close()
+	out := []AuditLogRow{}
+	for rows.Next() {
+		var row AuditLogRow
+		if err := rows.Scan(&row.ID, &row.ActorType, &row.Action, &row.TargetType,
+			&row.TargetID, &row.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repository) ListFreshness(ctx context.Context, limit int) ([]FreshnessRow, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT fc.id, p.uuid::text, p.title_public, fc.status,

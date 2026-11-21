@@ -15,6 +15,7 @@ import (
 	"housing/internal/assistant"
 	"housing/internal/auth"
 	"housing/internal/building"
+	"housing/internal/community"
 	"housing/internal/config"
 	"housing/internal/contact"
 	"housing/internal/db"
@@ -22,8 +23,10 @@ import (
 	"housing/internal/httpapi"
 	"housing/internal/importjob"
 	"housing/internal/intake"
+	"housing/internal/modelgw"
 	"housing/internal/property"
 	"housing/internal/secure"
+	"housing/internal/storage"
 	"housing/internal/user"
 	"housing/internal/wechat"
 )
@@ -76,8 +79,32 @@ func main() {
 	buildingSvc := building.NewService(buildingRepo)
 	buildingHandler := building.NewHandler(buildingSvc)
 
+	communityRepo := community.NewRepository(pool)
+	communitySvc := community.NewService(communityRepo)
+	communityHandler := community.NewHandler(communitySvc)
+
+	mediaSvc, err := storage.New(storage.Config{
+		SecretID:  cfg.COSSecretID,
+		SecretKey: cfg.COSSecretKey,
+		Bucket:    cfg.COSBucket,
+		Region:    cfg.COSRegion,
+		Domain:    cfg.COSDomain,
+		LocalDir:  cfg.MediaDir,
+	})
+	if err != nil {
+		log.Error("init object storage", "err", err)
+		os.Exit(1)
+	}
+
+	modelGateway := modelgw.New(modelgw.Config{
+		OCR: modelgw.Provider{BaseURL: cfg.ModelOCRBaseURL, APIKey: cfg.ModelOCRApiKey, Model: cfg.ModelOCRModel},
+		ASR: modelgw.Provider{BaseURL: cfg.ModelASRBaseURL, APIKey: cfg.ModelASRApiKey, Model: cfg.ModelASRModel},
+		TTS: modelgw.Provider{BaseURL: cfg.ModelTTSBaseURL, APIKey: cfg.ModelTTSApiKey, Model: cfg.ModelTTSModel, Voice: cfg.ModelTTSVoice},
+		LLM: modelgw.Provider{BaseURL: cfg.ModelLLMBaseURL, APIKey: cfg.ModelLLMApiKey, Model: cfg.ModelLLMModel},
+	}, pool, log)
+
 	propertyRepo := property.NewRepository(pool)
-	propertySvc := property.NewService(propertyRepo, buildingSvc, userRepo)
+	propertySvc := property.NewService(propertyRepo, buildingSvc, communitySvc, mediaSvc, userRepo)
 	propertyHandler := property.NewHandler(propertySvc)
 
 	contactRepo := contact.NewRepository(pool)
@@ -89,15 +116,15 @@ func main() {
 	freshnessHandler := freshness.NewHandler(freshnessSvc)
 
 	assistantRepo := assistant.NewRepository(pool)
-	assistantSvc := assistant.NewService(assistantRepo)
+	assistantSvc := assistant.NewService(assistantRepo, modelGateway, mediaSvc)
 	assistantHandler := assistant.NewHandler(assistantSvc)
 
 	importRepo := importjob.NewRepository(pool)
-	importSvc := importjob.NewService(importRepo, propertySvc, buildingSvc)
+	importSvc := importjob.NewService(importRepo, propertySvc, communitySvc)
 	importHandler := importjob.NewHandler(importSvc)
 
 	intakeRepo := intake.NewRepository(pool)
-	intakeSvc := intake.NewService(intakeRepo, userRepo, buildingSvc, propertySvc, pii)
+	intakeSvc := intake.NewService(intakeRepo, userRepo, communitySvc, propertySvc, pii, modelGateway, mediaSvc)
 	intakeHandler := intake.NewHandler(intakeSvc)
 
 	adminRepo := admin.NewRepository(pool)
@@ -105,15 +132,18 @@ func main() {
 	adminHandler := admin.NewHandler(adminSvc)
 
 	router := httpapi.NewRouter(cfg, log, tokens, adminTokens, httpapi.Handlers{
-		User:      userHandler,
-		Property:  propertyHandler,
-		Building:  buildingHandler,
-		Contact:   contactHandler,
-		Freshness: freshnessHandler,
-		Assistant: assistantHandler,
-		Import:    importHandler,
-		Intake:    intakeHandler,
-		Admin:     adminHandler,
+		User:            userHandler,
+		Property:        propertyHandler,
+		Building:        buildingHandler,
+		Community:       communityHandler,
+		Contact:         contactHandler,
+		Freshness:       freshnessHandler,
+		Assistant:       assistantHandler,
+		Import:          importHandler,
+		Intake:          intakeHandler,
+		Admin:           adminHandler,
+		Media:           mediaSvc,
+		AllowLocalMedia: cfg.Env == "dev",
 	})
 
 	srv := &http.Server{
