@@ -1,9 +1,12 @@
 package prospect
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -488,6 +491,143 @@ func parseAuditTime(v string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("%w: 时间格式需为 RFC3339", ErrInvalidAuditQuery)
+}
+
+// ---- 批次 14：来源效果明细与 CSV 导出 ----
+
+var sourceKindLabels = map[string]string{
+	"self_owned":         "自有数据",
+	"public_api":         "公开API",
+	"third_party_scrape": "第三方公开页面",
+}
+
+// ListSourceStats 按信息源返回采集 / 线索 / 跟进聚合指标。
+func (s *Service) ListSourceStats(ctx context.Context, in SourceStatsQuery) ([]SourceStatVO, error) {
+	from, to, err := parseStatsRange(in)
+	if err != nil {
+		return nil, err
+	}
+	stats, err := s.repo.ListSourceStats(ctx, from, to)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SourceStatVO, 0, len(stats))
+	for _, st := range stats {
+		out = append(out, toSourceStatVO(st))
+	}
+	return out, nil
+}
+
+// ExportSourceStatsCSV 生成来源效果明细 CSV（仅聚合指标，不含正文与联系方式）并写审计。
+func (s *Service) ExportSourceStatsCSV(ctx context.Context, adminID int64, in SourceStatsQuery) ([]byte, string, error) {
+	from, to, err := parseStatsRange(in)
+	if err != nil {
+		return nil, "", err
+	}
+	stats, err := s.repo.ListSourceStats(ctx, from, to)
+	if err != nil {
+		return nil, "", err
+	}
+
+	var buf bytes.Buffer
+	buf.WriteString("\xef\xbb\xbf") // BOM：保证 Excel 正确识别 UTF-8
+	w := csv.NewWriter(&buf)
+	_ = w.Write([]string{
+		"来源名称", "来源UUID", "类型", "状态",
+		"采集次数", "抓取数", "入库数", "重复数", "拒收数", "无效数", "失败数",
+		"线索总数", "待复核", "已复核", "跟进中", "已转化", "已发布", "已拒绝", "线索拒收",
+		"达标线索", "平均评分", "跟进次数", "转化率",
+	})
+	for _, st := range stats {
+		enabled := "停用"
+		if st.Enabled {
+			enabled = "启用"
+		}
+		_ = w.Write([]string{
+			st.SourceName, st.SourceUUID, sourceKindLabels[st.Kind], enabled,
+			fmt.Sprint(st.Runs), fmt.Sprint(st.Fetched), fmt.Sprint(st.Ingested),
+			fmt.Sprint(st.Duplicate), fmt.Sprint(st.OptedOut), fmt.Sprint(st.Invalid), fmt.Sprint(st.Failed),
+			fmt.Sprint(st.LeadsTotal), fmt.Sprint(st.Pending), fmt.Sprint(st.Reviewed),
+			fmt.Sprint(st.FollowingUp), fmt.Sprint(st.Converted), fmt.Sprint(st.Published),
+			fmt.Sprint(st.Rejected), fmt.Sprint(st.LeadsOptedOut), fmt.Sprint(st.Qualified),
+			fmt.Sprint(st.AvgScore), fmt.Sprint(st.FollowUps),
+			fmt.Sprintf("%.2f%%", sourceConversionRate(st.Converted, st.LeadsTotal)*100),
+		})
+	}
+	w.Flush()
+	if err := w.Error(); err != nil {
+		return nil, "", err
+	}
+	s.repo.Audit(ctx, adminID, "prospect.stats.export", "prospect_stats", "csv")
+	name := fmt.Sprintf("source-stats-%s.csv", time.Now().Format("20060102"))
+	return buf.Bytes(), name, nil
+}
+
+func toSourceStatVO(st SourceStat) SourceStatVO {
+	return SourceStatVO{
+		SourceUUID:     st.SourceUUID,
+		SourceName:     st.SourceName,
+		Kind:           st.Kind,
+		Enabled:        st.Enabled,
+		Runs:           st.Runs,
+		Fetched:        st.Fetched,
+		Ingested:       st.Ingested,
+		Duplicate:      st.Duplicate,
+		OptedOut:       st.OptedOut,
+		Invalid:        st.Invalid,
+		Failed:         st.Failed,
+		LeadsTotal:     st.LeadsTotal,
+		Pending:        st.Pending,
+		Reviewed:       st.Reviewed,
+		FollowingUp:    st.FollowingUp,
+		Converted:      st.Converted,
+		Published:      st.Published,
+		Rejected:       st.Rejected,
+		LeadsOptedOut:  st.LeadsOptedOut,
+		Qualified:      st.Qualified,
+		AvgScore:       st.AvgScore,
+		FollowUps:      st.FollowUps,
+		ConversionRate: sourceConversionRate(st.Converted, st.LeadsTotal),
+	}
+}
+
+// sourceConversionRate 返回来源维度的 0–1 转化率，保留 4 位小数。
+func sourceConversionRate(converted, total int) float64 {
+	if total <= 0 {
+		return 0
+	}
+	return math.Round(float64(converted)/float64(total)*10000) / 10000
+}
+
+// parseStatsRange 解析来源统计的可选时间区间。
+func parseStatsRange(in SourceStatsQuery) (*time.Time, *time.Time, error) {
+	from, err := parseStatsTime(in.From)
+	if err != nil {
+		return nil, nil, err
+	}
+	to, err := parseStatsTime(in.To)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !from.IsZero() && !to.IsZero() && to.Before(from) {
+		return nil, nil, fmt.Errorf("%w: 结束时间不能早于开始时间", ErrInvalidStatsQuery)
+	}
+	var fromArg, toArg *time.Time
+	if !from.IsZero() {
+		fromArg = &from
+	}
+	if !to.IsZero() {
+		toArg = &to
+	}
+	return fromArg, toArg, nil
+}
+
+func parseStatsTime(v string) (time.Time, error) {
+	t, err := parseAuditTime(v)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: 时间格式需为 RFC3339", ErrInvalidStatsQuery)
+	}
+	return t, nil
 }
 
 // reviewTargetStatus 把复核结论映射为目标状态。

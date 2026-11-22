@@ -31,6 +31,8 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.GET("/prospects/reminders", h.listReminders)
 	r.GET("/prospects/collect-runs", h.listCollectRuns)
 	r.GET("/prospects/audit-logs", h.listAuditLogs)
+	r.GET("/prospects/source-stats", h.listSourceStats)
+	r.GET("/prospects/source-stats/export", h.exportSourceStatsCSV)
 	r.GET("/prospects/notifications", h.listNotifications)
 	r.POST("/prospects/notifications/:id/read", h.markNotificationRead)
 	r.GET("/prospects/stats", h.getStats)
@@ -528,4 +530,45 @@ func (h *Handler) listAuditLogs(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+// ---- 批次 14：来源效果明细与 CSV 导出 ----
+
+func (h *Handler) listSourceStats(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	items, err := h.svc.ListSourceStats(c.Request.Context(), SourceStatsQuery{
+		From: c.Query("from"),
+		To:   c.Query("to"),
+	})
+	if err != nil {
+		if errors.Is(err, ErrInvalidStatsQuery) {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载来源效果明细失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+func (h *Handler) exportSourceStatsCSV(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	data, filename, err := h.svc.ExportSourceStatsCSV(c.Request.Context(), httpx.CurrentAdminID(c), SourceStatsQuery{
+		From: c.Query("from"),
+		To:   c.Query("to"),
+	})
+	if err != nil {
+		if errors.Is(err, ErrInvalidStatsQuery) {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "导出 CSV 失败")
+		return
+	}
+	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", data)
 }

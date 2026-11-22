@@ -13,7 +13,9 @@ import {
   fetchProspectNotifications,
   fetchProspectReminders,
   fetchProspects,
+  fetchProspectSourceStats,
   fetchProspectStats,
+  exportProspectSourceStatsCsv,
   fetchReviewQueue,
   markProspectNotificationRead,
   optOutProspect,
@@ -38,6 +40,7 @@ import {
   type ProspectLead,
   type ProspectLeadDetail,
   type ProspectReminder,
+  type ProspectSourceStat,
   type ProspectStats,
   type ProspectStatus,
   type ReminderLevel,
@@ -318,6 +321,14 @@ export default function Prospecting({ token }: { token: string }) {
   const [statsLoading, setStatsLoading] = useState(true)
   const [statsError, setStatsError] = useState('')
 
+  const [sourceStatsFrom, setSourceStatsFrom] = useState('')
+  const [sourceStatsTo, setSourceStatsTo] = useState('')
+  const [sourceStatsFilter, setSourceStatsFilter] = useState({ from: '', to: '' })
+  const [sourceStats, setSourceStats] = useState<ProspectSourceStat[]>([])
+  const [sourceStatsLoading, setSourceStatsLoading] = useState(true)
+  const [sourceStatsError, setSourceStatsError] = useState('')
+  const [sourceStatsExporting, setSourceStatsExporting] = useState(false)
+
   const [auditForm, setAuditForm] = useState<AuditFilterForm>(emptyAuditFilter)
   const [auditFilters, setAuditFilters] = useState<AuditFilterForm>(emptyAuditFilter)
   const [auditOffset, setAuditOffset] = useState(0)
@@ -553,6 +564,36 @@ export default function Prospecting({ token }: { token: string }) {
 
   useEffect(() => {
     let cancelled = false
+    setSourceStatsLoading(true)
+    fetchProspectSourceStats(token, {
+      from: sourceStatsFilter.from
+        ? new Date(sourceStatsFilter.from).toISOString()
+        : undefined,
+      to: sourceStatsFilter.to ? new Date(sourceStatsFilter.to).toISOString() : undefined,
+    })
+      .then((items) => {
+        if (!cancelled) {
+          setSourceStats(items)
+          setSourceStatsError('')
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setSourceStatsError(err.message || '来源效果明细加载失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSourceStatsLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, sourceStatsFilter])
+
+  useEffect(() => {
+    let cancelled = false
     setAuditLoading(true)
     fetchProspectAuditLogs(token, {
       action: auditFilters.action.trim() || undefined,
@@ -679,6 +720,42 @@ export default function Prospecting({ token }: { token: string }) {
         setStatsError('')
       })
       .catch((err: Error) => setStatsError(err.message || '获客统计加载失败'))
+  }
+
+  function submitSourceStatsFilter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSourceStatsFilter({ from: sourceStatsFrom, to: sourceStatsTo })
+  }
+
+  function resetSourceStatsFilter() {
+    setSourceStatsFrom('')
+    setSourceStatsTo('')
+    setSourceStatsFilter({ from: '', to: '' })
+  }
+
+  async function exportSourceStats() {
+    setSourceStatsExporting(true)
+    try {
+      const { blob, filename } = await exportProspectSourceStatsCsv(token, {
+        from: sourceStatsFilter.from
+          ? new Date(sourceStatsFilter.from).toISOString()
+          : undefined,
+        to: sourceStatsFilter.to ? new Date(sourceStatsFilter.to).toISOString() : undefined,
+      })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setSourceStatsError('')
+    } catch (err) {
+      setSourceStatsError((err as Error).message || '导出 CSV 失败')
+    } finally {
+      setSourceStatsExporting(false)
+    }
   }
 
   function refreshDetail(uuid: string) {
@@ -1008,6 +1085,100 @@ export default function Prospecting({ token }: { token: string }) {
             </div>
           </div>
         </>
+      )}
+
+      <h3 className="sub-head">来源效果明细</h3>
+      <p className="muted">
+        按信息源聚合采集、线索与跟进指标；CSV 仅含聚合数据，不含原文与联系方式。
+      </p>
+      <form className="prospect-form" onSubmit={submitSourceStatsFilter}>
+        <div className="draft-fields">
+          <input
+            type="datetime-local"
+            value={sourceStatsFrom}
+            onChange={(e) => setSourceStatsFrom(e.target.value)}
+          />
+          <input
+            type="datetime-local"
+            value={sourceStatsTo}
+            onChange={(e) => setSourceStatsTo(e.target.value)}
+          />
+        </div>
+        <div className="action-row">
+          <button className="btn primary" type="submit" disabled={sourceStatsLoading}>
+            查询
+          </button>
+          <button className="btn secondary" type="button" onClick={resetSourceStatsFilter}>
+            重置
+          </button>
+          <button
+            className="btn secondary"
+            type="button"
+            onClick={exportSourceStats}
+            disabled={sourceStatsExporting}
+          >
+            {sourceStatsExporting ? '导出中…' : '导出 CSV'}
+          </button>
+        </div>
+      </form>
+      {sourceStatsError && <div className="alert">{sourceStatsError}</div>}
+      {sourceStatsLoading && sourceStats.length === 0 && <p className="muted">加载中…</p>}
+      {!sourceStatsLoading && sourceStats.length === 0 && !sourceStatsError && (
+        <p className="muted">暂无信息源</p>
+      )}
+      {sourceStats.length > 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>来源</th>
+                <th>类型</th>
+                <th>状态</th>
+                <th>采集</th>
+                <th>抓取</th>
+                <th>入库</th>
+                <th>重复</th>
+                <th>拒收</th>
+                <th>无效</th>
+                <th>失败</th>
+                <th>线索</th>
+                <th>待复核</th>
+                <th>跟进中</th>
+                <th>已转化</th>
+                <th>已发布</th>
+                <th>平均分</th>
+                <th>转化率</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sourceStats.map((item) => (
+                <tr key={item.sourceUuid}>
+                  <td>{item.sourceName}</td>
+                  <td>{KIND_LABEL[item.kind]}</td>
+                  <td>
+                    <span className={`status ${item.enabled ? 'status-active' : 'status-offline'}`}>
+                      {item.enabled ? '启用' : '停用'}
+                    </span>
+                  </td>
+                  <td>{item.runs}</td>
+                  <td>{item.fetched}</td>
+                  <td>{item.ingested}</td>
+                  <td>{item.duplicate}</td>
+                  <td>{item.optedOut}</td>
+                  <td>{item.invalid}</td>
+                  <td>{item.failed}</td>
+                  <td>{item.leadsTotal}</td>
+                  <td>{item.pending}</td>
+                  <td>{item.followingUp}</td>
+                  <td>{item.converted}</td>
+                  <td>{item.published}</td>
+                  <td>{item.avgScore}</td>
+                  <td>{formatRate(item.conversionRate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <h3 className="sub-head">信息源</h3>

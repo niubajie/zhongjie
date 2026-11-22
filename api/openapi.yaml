@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.15.0
+  version: 0.16.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
@@ -1412,6 +1412,53 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProspectAuditLogListEnvelope"
+  /v1/admin/prospects/source-stats:
+    get:
+      tags: [prospect]
+      summary: 来源效果明细（批次14，按信息源聚合采集/线索/跟进指标，时间区间可选）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: 起始时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+        - name: to
+          in: query
+          description: 结束时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+      responses:
+        "200":
+          description: 来源效果明细
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectSourceStatListEnvelope"
+        "400":
+          description: 时间参数不合法
+  /v1/admin/prospects/source-stats/export:
+    get:
+      tags: [prospect]
+      summary: 导出来源效果明细 CSV（批次14，仅聚合指标，不含正文与联系方式）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: 起始时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+        - name: to
+          in: query
+          description: 结束时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+      responses:
+        "200":
+          description: CSV 文件（UTF-8 BOM，Excel 可直接打开）
+          content:
+            text/csv:
+              schema: {type: string, format: binary}
+        "400":
+          description: 时间参数不合法
   /v1/admin/prospects/{uuid}/status:
     post:
       tags: [prospect]
@@ -2423,6 +2470,47 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/ProspectAuditLogListData"
+    ProspectSourceStat:
+      type: object
+      description: 按信息源聚合的效果指标（批次14）
+      properties:
+        sourceUuid: {type: string, format: uuid}
+        sourceName: {type: string}
+        kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
+        enabled: {type: boolean}
+        runs: {type: integer, description: 采集次数}
+        fetched: {type: integer, description: 抓取条数}
+        ingested: {type: integer, description: 首次入库条数}
+        duplicate: {type: integer, description: 重复命中条数}
+        optedOut: {type: integer, description: 采集时命中拒收条数}
+        invalid: {type: integer, description: 无效条数}
+        failed: {type: integer, description: 失败条数}
+        leadsTotal: {type: integer, description: 线索总数}
+        pending: {type: integer, description: 待复核（new）}
+        reviewed: {type: integer}
+        followingUp: {type: integer, description: 已联系或跟进中}
+        converted: {type: integer}
+        published: {type: integer}
+        rejected: {type: integer}
+        leadsOptedOut: {type: integer, description: 线索中被拒收的数量}
+        qualified: {type: integer, description: 评分达标且非 unknown}
+        avgScore: {type: integer}
+        followUps: {type: integer, description: 跟进记录数}
+        conversionRate: {type: number, description: "0–1 的转化率（converted / leadsTotal）"}
+    ProspectSourceStatListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectSourceStat"
+    ProspectSourceStatListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectSourceStatListData"
     ProspectLead:
       type: object
       description: 对外线索视图，不含原文密文与联系方式明文

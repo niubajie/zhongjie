@@ -588,6 +588,83 @@ func (r *Repository) ListAuditLogs(ctx context.Context, f AuditLogFilter) ([]Aud
 	return out, total, rows.Err()
 }
 
+// ---- 批次 14：来源效果明细 ----
+
+// ListSourceStats 按信息源聚合采集运行、线索状态与跟进数量；时间区间为空表示全量。
+func (r *Repository) ListSourceStats(ctx context.Context, from, to *time.Time) ([]SourceStat, error) {
+	rows, err := r.pool.Query(ctx, `
+		WITH run_stats AS (
+			SELECT source_id,
+			       count(*) AS runs,
+			       COALESCE(sum(fetched), 0) AS fetched,
+			       COALESCE(sum(ingested), 0) AS ingested,
+			       COALESCE(sum(duplicate), 0) AS duplicate,
+			       COALESCE(sum(opted_out), 0) AS opted_out,
+			       COALESCE(sum(invalid), 0) AS invalid,
+			       COALESCE(sum(failed), 0) AS failed
+			FROM prospect_collect_runs
+			WHERE ($1::timestamptz IS NULL OR started_at >= $1)
+			  AND ($2::timestamptz IS NULL OR started_at <= $2)
+			GROUP BY source_id
+		), lead_stats AS (
+			SELECT source_id,
+			       count(*) AS total,
+			       count(*) FILTER (WHERE status = 'new') AS pending,
+			       count(*) FILTER (WHERE status = 'reviewed') AS reviewed,
+			       count(*) FILTER (WHERE status IN ('contacted', 'following_up')) AS following_up,
+			       count(*) FILTER (WHERE status = 'converted') AS converted,
+			       count(*) FILTER (WHERE status = 'published') AS published,
+			       count(*) FILTER (WHERE status = 'rejected') AS rejected,
+			       count(*) FILTER (WHERE status = 'opt_out') AS opted_out,
+			       count(*) FILTER (WHERE intent_score >= $3 AND intent_status <> 'unknown') AS qualified,
+			       COALESCE(round(avg(intent_score))::int, 0) AS avg_score
+			FROM prospect_leads
+			WHERE deleted_at IS NULL
+			  AND ($1::timestamptz IS NULL OR created_at >= $1)
+			  AND ($2::timestamptz IS NULL OR created_at <= $2)
+			GROUP BY source_id
+		), follow_stats AS (
+			SELECT l.source_id, count(*) AS follow_ups
+			FROM follow_ups f
+			JOIN prospect_leads l ON l.id = f.lead_id
+			WHERE l.deleted_at IS NULL
+			  AND ($1::timestamptz IS NULL OR f.created_at >= $1)
+			  AND ($2::timestamptz IS NULL OR f.created_at <= $2)
+			GROUP BY l.source_id
+		)
+		SELECT s.uuid::text, s.name, s.kind, s.enabled,
+		       COALESCE(r.runs, 0), COALESCE(r.fetched, 0), COALESCE(r.ingested, 0),
+		       COALESCE(r.duplicate, 0), COALESCE(r.opted_out, 0), COALESCE(r.invalid, 0),
+		       COALESCE(r.failed, 0),
+		       COALESCE(l.total, 0), COALESCE(l.pending, 0), COALESCE(l.reviewed, 0),
+		       COALESCE(l.following_up, 0), COALESCE(l.converted, 0), COALESCE(l.published, 0),
+		       COALESCE(l.rejected, 0), COALESCE(l.opted_out, 0), COALESCE(l.qualified, 0),
+		       COALESCE(l.avg_score, 0), COALESCE(f.follow_ups, 0)
+		FROM lead_sources s
+		LEFT JOIN run_stats r ON r.source_id = s.id
+		LEFT JOIN lead_stats l ON l.source_id = s.id
+		LEFT JOIN follow_stats f ON f.source_id = s.id
+		WHERE s.deleted_at IS NULL
+		ORDER BY s.created_at DESC
+	`, from, to, ReviewScoreThreshold)
+	if err != nil {
+		return nil, fmt.Errorf("list source stats: %w", err)
+	}
+	defer rows.Close()
+	out := []SourceStat{}
+	for rows.Next() {
+		var s SourceStat
+		if err := rows.Scan(&s.SourceUUID, &s.SourceName, &s.Kind, &s.Enabled,
+			&s.Runs, &s.Fetched, &s.Ingested, &s.Duplicate, &s.OptedOut, &s.Invalid, &s.Failed,
+			&s.LeadsTotal, &s.Pending, &s.Reviewed, &s.FollowingUp, &s.Converted, &s.Published,
+			&s.Rejected, &s.LeadsOptedOut, &s.Qualified, &s.AvgScore, &s.FollowUps); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // LeadExistsByContactHash 判断同一联系方式（同 lead_type）是否已入库，用于跨平台去重。
 func (r *Repository) LeadExistsByContactHash(ctx context.Context, contactHash []byte, leadType string) (bool, error) {
 	var exists bool

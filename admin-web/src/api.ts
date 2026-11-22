@@ -668,6 +668,90 @@ export async function fetchProspectStats(token: string): Promise<ProspectStats> 
   return request<ProspectStats>('/v1/admin/prospects/stats', {}, token)
 }
 
+export interface ProspectSourceStat {
+  sourceUuid: string
+  sourceName: string
+  kind: LeadSourceKind
+  enabled: boolean
+  runs: number
+  fetched: number
+  ingested: number
+  duplicate: number
+  optedOut: number
+  invalid: number
+  failed: number
+  leadsTotal: number
+  pending: number
+  reviewed: number
+  followingUp: number
+  converted: number
+  published: number
+  rejected: number
+  leadsOptedOut: number
+  qualified: number
+  avgScore: number
+  followUps: number
+  conversionRate: number
+}
+
+export interface SourceStatsFilter {
+  from?: string
+  to?: string
+}
+
+function sourceStatsQuery(filter: SourceStatsFilter): string {
+  const params = new URLSearchParams()
+  if (filter.from) {
+    params.set('from', filter.from)
+  }
+  if (filter.to) {
+    params.set('to', filter.to)
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ''
+}
+
+export async function fetchProspectSourceStats(
+  token: string,
+  filter: SourceStatsFilter = {},
+): Promise<ProspectSourceStat[]> {
+  const data = await request<{ items: ProspectSourceStat[] }>(
+    `/v1/admin/prospects/source-stats${sourceStatsQuery(filter)}`,
+    {},
+    token,
+  )
+  return data.items
+}
+
+// 导出 CSV 走二进制响应，不能用 request() 解析 JSON。
+export async function exportProspectSourceStatsCsv(
+  token: string,
+  filter: SourceStatsFilter = {},
+): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch(
+    `${apiBase}/v1/admin/prospects/source-stats/export${sourceStatsQuery(filter)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  )
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`
+    try {
+      const body = (await response.json()) as Envelope<unknown>
+      if (body.message) {
+        message = body.message
+      }
+    } catch {
+      // 非 JSON 错误响应，保留默认信息
+    }
+    throw new Error(message)
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = disposition.match(/filename="([^"]+)"/)
+  return {
+    blob: await response.blob(),
+    filename: match?.[1] ?? 'source-stats.csv',
+  }
+}
+
 export async function fetchProspectReminders(
   token: string,
   limit = 50,

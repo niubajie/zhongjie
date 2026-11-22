@@ -25,6 +25,7 @@ var (
 	ErrInvalidFollowUp      = errors.New("跟进参数不合法")
 	ErrNotificationNotFound = errors.New("通知不存在")
 	ErrInvalidAuditQuery    = errors.New("审计日志查询参数不合法")
+	ErrInvalidStatsQuery    = errors.New("来源统计参数不合法")
 )
 
 // 线索类型
@@ -622,4 +623,69 @@ type AuditLogListVO struct {
 	Total  int64        `json:"total"`
 	Limit  int          `json:"limit"`
 	Offset int          `json:"offset"`
+}
+
+// ---- 批次 14：来源效果明细 ----
+
+// SourceStatsQuery 来源统计查询参数；From / To 为空表示不限时间。
+type SourceStatsQuery struct {
+	From string
+	To   string
+}
+
+// SourceStat 按信息源聚合的采集 / 线索 / 跟进指标。
+type SourceStat struct {
+	SourceUUID string
+	SourceName string
+	Kind       string
+	Enabled    bool
+
+	Runs      int
+	Fetched   int
+	Ingested  int
+	Duplicate int
+	OptedOut  int
+	Invalid   int
+	Failed    int
+
+	LeadsTotal    int
+	Pending       int
+	Reviewed      int
+	FollowingUp   int
+	Converted     int
+	Published     int
+	Rejected      int
+	LeadsOptedOut int
+	Qualified     int
+	AvgScore      int
+	FollowUps     int
+}
+
+// SourceStatVO 来源效果明细视图。
+type SourceStatVO struct {
+	SourceUUID string `json:"sourceUuid"`
+	SourceName string `json:"sourceName"`
+	Kind       string `json:"kind"`
+	Enabled    bool   `json:"enabled"`
+
+	Runs      int `json:"runs"`
+	Fetched   int `json:"fetched"`
+	Ingested  int `json:"ingested"`
+	Duplicate int `json:"duplicate"`
+	OptedOut  int `json:"optedOut"`
+	Invalid   int `json:"invalid"`
+	Failed    int `json:"failed"`
+
+	LeadsTotal     int     `json:"leadsTotal"`
+	Pending        int     `json:"pending"`
+	Reviewed       int     `json:"reviewed"`
+	FollowingUp    int     `json:"followingUp"`
+	Converted      int     `json:"converted"`
+	Published      int     `json:"published"`
+	Rejected       int     `json:"rejected"`
+	LeadsOptedOut  int     `json:"leadsOptedOut"`
+	Qualified      int     `json:"qualified"`
+	AvgScore       int     `json:"avgScore"`
+	FollowUps      int     `json:"followUps"`
+	ConversionRate float64 `json:"conversionRate"`
 }
