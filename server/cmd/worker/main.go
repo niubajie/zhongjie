@@ -77,7 +77,7 @@ func main() {
 	}
 
 	runProspect := func() {
-		stats, err := ingestor.RunOnce(context.Background())
+		stats, err := ingestor.RunDue(context.Background(), time.Now())
 		if err != nil {
 			log.Printf("prospect run failed: %v", err)
 			return
@@ -85,8 +85,8 @@ func main() {
 		if stats.Halted {
 			return
 		}
-		if stats.Fetched > 0 || stats.Ingested > 0 || stats.Failed > 0 {
-			log.Printf("prospect run: sources=%d fetched=%d ingested=%d duplicate=%d optedOut=%d invalid=%d failed=%d",
+		if stats.Sources > 0 {
+			log.Printf("prospect run: due=%d fetched=%d ingested=%d duplicate=%d optedOut=%d invalid=%d failed=%d",
 				stats.Sources, stats.Fetched, stats.Ingested, stats.Duplicate, stats.OptedOut, stats.Invalid, stats.Failed)
 		}
 		if scorer != nil {
@@ -118,7 +118,7 @@ func main() {
 	runFollowUpReminders()
 	freshTicker := time.NewTicker(6 * time.Hour)
 	notifyTicker := time.NewTicker(30 * time.Second)
-	prospectTicker := time.NewTicker(10 * time.Minute)
+	prospectTicker := time.NewTicker(time.Minute)
 	followUpTicker := time.NewTicker(30 * time.Minute)
 	defer freshTicker.Stop()
 	defer notifyTicker.Stop()

@@ -406,6 +406,12 @@ export interface LeadSource {
   robotsOk: boolean
   termsOk: boolean
   rateLimitMs: number
+  collectIntervalMinutes: number
+  lastCollectedAt?: string
+  nextCollectAt?: string
+  consecutiveFailures: number
+  lastError?: string
+  lastErrorAt?: string
   enabled: boolean
   reviewNote?: string
   createdAt: string
@@ -417,12 +423,29 @@ export interface CreateLeadSourceInput {
   kind: LeadSourceKind
   baseUrl?: string
   rateLimitMs?: number
+  collectIntervalMinutes?: number
   reviewNote?: string
 }
 
 export interface UpdateLeadSourceInput extends CreateLeadSourceInput {
   robotsOk: boolean
   termsOk: boolean
+}
+
+export interface ProspectCollectRun {
+  id: number
+  sourceUuid: string
+  sourceName: string
+  status: 'success' | 'failed'
+  fetched: number
+  ingested: number
+  duplicate: number
+  optedOut: number
+  invalid: number
+  failed: number
+  errorMessage?: string
+  startedAt: string
+  finishedAt: string
 }
 
 export interface ProspectLead {
@@ -568,6 +591,22 @@ export async function fetchReviewQueue(
   params.set('limit', String(limit))
   const data = await request<{ items: ProspectLead[] }>(
     `/v1/admin/prospects/review-queue?${params.toString()}`,
+    {},
+    token,
+  )
+  return data.items
+}
+
+export async function fetchCollectRuns(
+  token: string,
+  sourceUuid = '',
+  limit = 50,
+): Promise<ProspectCollectRun[]> {
+  const params = new URLSearchParams()
+  if (sourceUuid) params.set('sourceUuid', sourceUuid)
+  params.set('limit', String(limit))
+  const data = await request<{ items: ProspectCollectRun[] }>(
+    `/v1/admin/prospects/collect-runs?${params.toString()}`,
     {},
     token,
   )

@@ -31,10 +31,21 @@ type createdLead struct {
 type fakeStore struct {
 	halted         string
 	sources        []LeadSource
+	dueSources     []LeadSource
 	optOuts        map[string]bool
 	existingHashes map[string]bool
 	created        []createdLead
 	createErr      error
+	collects       []recordedCollect
+}
+
+type recordedCollect struct {
+	sourceID  int64
+	success   bool
+	startedAt time.Time
+	nextAt    time.Time
+	stats     CollectRunStats
+	errMsg    string
 }
 
 func hashKey(hash []byte, leadType string) string {
@@ -44,6 +55,22 @@ func hashKey(hash []byte, leadType string) string {
 func (f *fakeStore) GetSetting(context.Context, string) (string, error) { return f.halted, nil }
 
 func (f *fakeStore) ListEnabledSources(context.Context) ([]LeadSource, error) { return f.sources, nil }
+
+func (f *fakeStore) ListDueSources(context.Context, time.Time) ([]LeadSource, error) {
+	return f.dueSources, nil
+}
+
+func (f *fakeStore) RecordCollectResult(_ context.Context, sourceID int64, success bool, startedAt, nextAt time.Time, stats CollectRunStats, errMsg string) error {
+	f.collects = append(f.collects, recordedCollect{
+		sourceID:  sourceID,
+		success:   success,
+		startedAt: startedAt,
+		nextAt:    nextAt,
+		stats:     stats,
+		errMsg:    errMsg,
+	})
+	return nil
+}
 
 func (f *fakeStore) OptOutExists(_ context.Context, hash []byte, leadType string) (bool, error) {
 	return f.optOuts[hashKey(hash, leadType)], nil
@@ -203,6 +230,98 @@ func TestIngestorSkipsInvalidPost(t *testing.T) {
 	}
 	if stats.Invalid != 2 || len(store.created) != 0 {
 		t.Fatalf("非法数据应跳过: %+v", stats)
+	}
+}
+
+func TestRunDueRecordsSuccessAndSchedule(t *testing.T) {
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	src := testSource()
+	src.CollectIntervalMinutes = 30
+	store := &fakeStore{halted: "false", dueSources: []LeadSource{src}}
+	fc := &fakeCollector{kind: SourceKindPublicAPI, posts: []RawPost{{
+		ExternalPostID: "p1", LeadType: LeadTypeTenant,
+	}}}
+
+	stats, err := newTestIngestor(t, store, fc).RunDue(context.Background(), now)
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if stats.Sources != 1 || stats.Ingested != 1 || fc.calls != 1 {
+		t.Fatalf("到期源应被采集: stats=%+v calls=%d", stats, fc.calls)
+	}
+	if len(store.collects) != 1 {
+		t.Fatalf("应写一条运行记录, got %d", len(store.collects))
+	}
+	rec := store.collects[0]
+	if !rec.success || rec.sourceID != src.ID || rec.errMsg != "" {
+		t.Fatalf("运行记录错误: %+v", rec)
+	}
+	if want := now.Add(30 * time.Minute); !rec.nextAt.Equal(want) {
+		t.Fatalf("成功应按间隔排下一次: want %v got %v", want, rec.nextAt)
+	}
+	if rec.stats.Fetched != 1 || rec.stats.Ingested != 1 {
+		t.Fatalf("运行统计错误: %+v", rec.stats)
+	}
+}
+
+func TestRunDueBacksOffOnFetchFailure(t *testing.T) {
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	src := testSource()
+	src.CollectIntervalMinutes = 60
+	src.ConsecutiveFailures = 2
+	store := &fakeStore{halted: "false", dueSources: []LeadSource{src}}
+	fc := &fakeCollector{kind: SourceKindPublicAPI, err: errors.New("boom")}
+
+	stats, err := newTestIngestor(t, store, fc).RunDue(context.Background(), now)
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if stats.Failed != 1 || len(store.collects) != 1 {
+		t.Fatalf("失败应记一条: stats=%+v records=%d", stats, len(store.collects))
+	}
+	rec := store.collects[0]
+	if rec.success || rec.errMsg != "boom" || rec.stats.Failed != 1 {
+		t.Fatalf("失败运行记录错误: %+v", rec)
+	}
+	if want := now.Add(20 * time.Minute); !rec.nextAt.Equal(want) {
+		t.Fatalf("连续第 3 次失败应退避 20 分钟: want %v got %v", want, rec.nextAt)
+	}
+}
+
+func TestRunDueSkipsWhenNoSourceDue(t *testing.T) {
+	store := &fakeStore{halted: "false"}
+	fc := &fakeCollector{kind: SourceKindPublicAPI}
+	stats, err := newTestIngestor(t, store, fc).RunDue(context.Background(), time.Now())
+	if err != nil {
+		t.Fatalf("RunDue: %v", err)
+	}
+	if stats.Sources != 0 || fc.calls != 0 || len(store.collects) != 0 {
+		t.Fatalf("无到期源时不应采集: stats=%+v calls=%d records=%d", stats, fc.calls, len(store.collects))
+	}
+}
+
+func TestNextCollectAt(t *testing.T) {
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name     string
+		interval int
+		failures int
+		success  bool
+		want     time.Duration
+	}{
+		{"成功按采集间隔", 30, 3, true, 30 * time.Minute},
+		{"首次失败 5 分钟", 60, 0, false, 5 * time.Minute},
+		{"第三次失败 20 分钟", 60, 2, false, 20 * time.Minute},
+		{"退避不超过采集间隔", 15, 10, false, 15 * time.Minute},
+		{"退避上限 60 分钟", 1440, 10, false, 60 * time.Minute},
+		{"间隔为空用默认值", 0, 0, true, DefaultCollectIntervalMinutes * time.Minute},
+	}
+	for _, c := range cases {
+		src := LeadSource{CollectIntervalMinutes: c.interval, ConsecutiveFailures: c.failures}
+		got := nextCollectAt(now, src, c.success)
+		if !got.Equal(now.Add(c.want)) {
+			t.Errorf("%s: want %v got %v", c.name, now.Add(c.want), got)
+		}
 	}
 }
 

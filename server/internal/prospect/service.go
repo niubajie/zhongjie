@@ -42,6 +42,11 @@ func (s *Service) CreateSource(ctx context.Context, adminID int64, in CreateSour
 	if !validSourceKinds[in.Kind] {
 		return LeadSourceVO{}, errors.New("信息源类型不合法")
 	}
+	interval, err := normalizeCollectInterval(in.CollectIntervalMinutes)
+	if err != nil {
+		return LeadSourceVO{}, err
+	}
+	in.CollectIntervalMinutes = interval
 	_, uuid, err := s.repo.CreateSource(ctx, in)
 	if err != nil {
 		return LeadSourceVO{}, err
@@ -142,6 +147,11 @@ func (s *Service) UpdateSource(ctx context.Context, adminID int64, uuid string, 
 	if !validSourceKinds[in.Kind] {
 		return fmt.Errorf("%w: 类型不合法", ErrInvalidSourceInput)
 	}
+	interval, err := normalizeCollectInterval(in.CollectIntervalMinutes)
+	if err != nil {
+		return err
+	}
+	in.CollectIntervalMinutes = interval
 	if err := s.repo.UpdateSource(ctx, uuid, in); err != nil {
 		return err
 	}
@@ -155,6 +165,47 @@ func (s *Service) DeleteSource(ctx context.Context, adminID int64, uuid string) 
 	}
 	s.repo.Audit(ctx, adminID, "prospect.source.delete", "lead_source", uuid)
 	return nil
+}
+
+// ---- 批次 12：采集定时调度与失败重试 ----
+
+// normalizeCollectInterval 校验采集间隔；0 表示使用默认值。
+func normalizeCollectInterval(minutes int) (int, error) {
+	if minutes == 0 {
+		return DefaultCollectIntervalMinutes, nil
+	}
+	if minutes < MinCollectIntervalMinutes || minutes > MaxCollectIntervalMinutes {
+		return 0, fmt.Errorf("%w: 采集间隔需在 %d-%d 分钟之间",
+			ErrInvalidSourceInput, MinCollectIntervalMinutes, MaxCollectIntervalMinutes)
+	}
+	return minutes, nil
+}
+
+// ListCollectRuns 采集运行记录列表，可按信息源 UUID 过滤。
+func (s *Service) ListCollectRuns(ctx context.Context, sourceUUID string, limit int) ([]CollectRunVO, error) {
+	runs, err := s.repo.ListCollectRuns(ctx, sourceUUID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CollectRunVO, 0, len(runs))
+	for _, r := range runs {
+		out = append(out, CollectRunVO{
+			ID:           r.ID,
+			SourceUUID:   r.SourceUUID,
+			SourceName:   r.SourceName,
+			Status:       r.Status,
+			Fetched:      r.Stats.Fetched,
+			Ingested:     r.Stats.Ingested,
+			Duplicate:    r.Stats.Duplicate,
+			OptedOut:     r.Stats.OptedOut,
+			Invalid:      r.Stats.Invalid,
+			Failed:       r.Stats.Failed,
+			ErrorMessage: r.ErrorMessage,
+			StartedAt:    r.StartedAt,
+			FinishedAt:   r.FinishedAt,
+		})
+	}
+	return out, nil
 }
 
 // ---- 批次 5：人工复核 + 首条联系 ----
@@ -408,17 +459,23 @@ func parseBoolSetting(v string) bool {
 
 func toSourceVO(s LeadSource) LeadSourceVO {
 	return LeadSourceVO{
-		UUID:        s.UUID,
-		Name:        s.Name,
-		Kind:        s.Kind,
-		BaseURL:     s.BaseURL,
-		RobotsOK:    s.RobotsOK,
-		TermsOK:     s.TermsOK,
-		RateLimitMs: s.RateLimitMs,
-		Enabled:     s.Enabled,
-		ReviewNote:  s.ReviewNote,
-		CreatedAt:   s.CreatedAt,
-		UpdatedAt:   s.UpdatedAt,
+		UUID:                   s.UUID,
+		Name:                   s.Name,
+		Kind:                   s.Kind,
+		BaseURL:                s.BaseURL,
+		RobotsOK:               s.RobotsOK,
+		TermsOK:                s.TermsOK,
+		RateLimitMs:            s.RateLimitMs,
+		CollectIntervalMinutes: s.CollectIntervalMinutes,
+		LastCollectedAt:        s.LastCollectedAt,
+		NextCollectAt:          s.NextCollectAt,
+		ConsecutiveFailures:    s.ConsecutiveFailures,
+		LastError:              s.LastError,
+		LastErrorAt:            s.LastErrorAt,
+		Enabled:                s.Enabled,
+		ReviewNote:             s.ReviewNote,
+		CreatedAt:              s.CreatedAt,
+		UpdatedAt:              s.UpdatedAt,
 	}
 }
 

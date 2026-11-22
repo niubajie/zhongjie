@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -21,6 +22,28 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 
 const tsFmt = `to_char(%s AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`
 
+// sourceColumns 是 lead_sources 的统一查询列（顺序与 scanSource 一致）。
+var sourceColumns = `id, uuid::text, name, kind, COALESCE(base_url, ''), robots_ok, terms_ok,
+	rate_limit_ms, enabled, COALESCE(review_note, ''), collect_interval_minutes,
+	COALESCE(` + fmt.Sprintf(tsFmt, "last_collected_at") + `, ''),
+	COALESCE(` + fmt.Sprintf(tsFmt, "next_collect_at") + `, ''),
+	consecutive_failures, COALESCE(last_error, ''),
+	COALESCE(` + fmt.Sprintf(tsFmt, "last_error_at") + `, ''),
+	` + fmt.Sprintf(tsFmt, "created_at") + `, ` + fmt.Sprintf(tsFmt, "updated_at")
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanSource(row rowScanner) (LeadSource, error) {
+	var s LeadSource
+	err := row.Scan(&s.ID, &s.UUID, &s.Name, &s.Kind, &s.BaseURL, &s.RobotsOK, &s.TermsOK,
+		&s.RateLimitMs, &s.Enabled, &s.ReviewNote, &s.CollectIntervalMinutes,
+		&s.LastCollectedAt, &s.NextCollectAt, &s.ConsecutiveFailures,
+		&s.LastError, &s.LastErrorAt, &s.CreatedAt, &s.UpdatedAt)
+	return s, err
+}
+
 // ---- 信息源 ----
 
 func (r *Repository) CreateSource(ctx context.Context, in CreateSourceInput) (int64, string, error) {
@@ -30,11 +53,15 @@ func (r *Repository) CreateSource(ctx context.Context, in CreateSourceInput) (in
 	if rate <= 0 {
 		rate = 3000
 	}
+	interval := in.CollectIntervalMinutes
+	if interval <= 0 {
+		interval = DefaultCollectIntervalMinutes
+	}
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO lead_sources (name, kind, base_url, rate_limit_ms, review_note)
-		VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5, ''))
+		INSERT INTO lead_sources (name, kind, base_url, rate_limit_ms, collect_interval_minutes, review_note)
+		VALUES ($1, $2, NULLIF($3, ''), $4, $5, NULLIF($6, ''))
 		RETURNING id, uuid::text
-	`, in.Name, in.Kind, in.BaseURL, rate, in.ReviewNote).Scan(&id, &uuid)
+	`, in.Name, in.Kind, in.BaseURL, rate, interval, in.ReviewNote).Scan(&id, &uuid)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -46,15 +73,11 @@ func (r *Repository) CreateSource(ctx context.Context, in CreateSourceInput) (in
 }
 
 func (r *Repository) GetSource(ctx context.Context, uuid string) (LeadSource, error) {
-	var s LeadSource
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, uuid::text, name, kind, COALESCE(base_url, ''), robots_ok, terms_ok,
-		       rate_limit_ms, enabled, COALESCE(review_note, ''),
-		       `+fmt.Sprintf(tsFmt, "created_at")+`, `+fmt.Sprintf(tsFmt, "updated_at")+`
+	s, err := scanSource(r.pool.QueryRow(ctx, `
+		SELECT `+sourceColumns+`
 		FROM lead_sources
 		WHERE uuid = $1 AND deleted_at IS NULL
-	`, uuid).Scan(&s.ID, &s.UUID, &s.Name, &s.Kind, &s.BaseURL, &s.RobotsOK, &s.TermsOK,
-		&s.RateLimitMs, &s.Enabled, &s.ReviewNote, &s.CreatedAt, &s.UpdatedAt)
+	`, uuid))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return LeadSource{}, ErrSourceNotFound
 	}
@@ -66,9 +89,7 @@ func (r *Repository) GetSource(ctx context.Context, uuid string) (LeadSource, er
 
 func (r *Repository) ListSources(ctx context.Context) ([]LeadSource, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, uuid::text, name, kind, COALESCE(base_url, ''), robots_ok, terms_ok,
-		       rate_limit_ms, enabled, COALESCE(review_note, ''),
-		       `+fmt.Sprintf(tsFmt, "created_at")+`, `+fmt.Sprintf(tsFmt, "updated_at")+`
+		SELECT `+sourceColumns+`
 		FROM lead_sources
 		WHERE deleted_at IS NULL
 		ORDER BY created_at DESC
@@ -79,9 +100,8 @@ func (r *Repository) ListSources(ctx context.Context) ([]LeadSource, error) {
 	defer rows.Close()
 	out := []LeadSource{}
 	for rows.Next() {
-		var s LeadSource
-		if err := rows.Scan(&s.ID, &s.UUID, &s.Name, &s.Kind, &s.BaseURL, &s.RobotsOK, &s.TermsOK,
-			&s.RateLimitMs, &s.Enabled, &s.ReviewNote, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		s, err := scanSource(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, s)
@@ -354,12 +374,17 @@ func (r *Repository) UpdateSource(ctx context.Context, uuid string, in UpdateSou
 	if rate <= 0 {
 		rate = 3000
 	}
+	interval := in.CollectIntervalMinutes
+	if interval <= 0 {
+		interval = DefaultCollectIntervalMinutes
+	}
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE lead_sources
 		SET name = $2, kind = $3, base_url = NULLIF($4, ''), rate_limit_ms = $5,
-		    robots_ok = $6, terms_ok = $7, review_note = NULLIF($8, ''), updated_at = now()
+		    collect_interval_minutes = $6, robots_ok = $7, terms_ok = $8,
+		    review_note = NULLIF($9, ''), updated_at = now()
 		WHERE uuid = $1 AND deleted_at IS NULL
-	`, uuid, in.Name, in.Kind, in.BaseURL, rate, in.RobotsOK, in.TermsOK, in.ReviewNote)
+	`, uuid, in.Name, in.Kind, in.BaseURL, rate, interval, in.RobotsOK, in.TermsOK, in.ReviewNote)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -392,9 +417,7 @@ func (r *Repository) SoftDeleteSource(ctx context.Context, uuid string) error {
 // ListEnabledSources 返回已启用且未删除的信息源，供采集器逐源拉取。
 func (r *Repository) ListEnabledSources(ctx context.Context) ([]LeadSource, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, uuid::text, name, kind, COALESCE(base_url, ''), robots_ok, terms_ok,
-		       rate_limit_ms, enabled, COALESCE(review_note, ''),
-		       `+fmt.Sprintf(tsFmt, "created_at")+`, `+fmt.Sprintf(tsFmt, "updated_at")+`
+		SELECT `+sourceColumns+`
 		FROM lead_sources
 		WHERE enabled = true AND deleted_at IS NULL
 		ORDER BY id
@@ -405,12 +428,98 @@ func (r *Repository) ListEnabledSources(ctx context.Context) ([]LeadSource, erro
 	defer rows.Close()
 	out := []LeadSource{}
 	for rows.Next() {
-		var s LeadSource
-		if err := rows.Scan(&s.ID, &s.UUID, &s.Name, &s.Kind, &s.BaseURL, &s.RobotsOK, &s.TermsOK,
-			&s.RateLimitMs, &s.Enabled, &s.ReviewNote, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		s, err := scanSource(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// ListDueSources 返回已到采集时间的信息源：next_collect_at 为空视为立即到期。
+func (r *Repository) ListDueSources(ctx context.Context, now time.Time) ([]LeadSource, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+sourceColumns+`
+		FROM lead_sources
+		WHERE enabled = true AND deleted_at IS NULL
+		  AND (next_collect_at IS NULL OR next_collect_at <= $1)
+		ORDER BY id
+	`, now)
+	if err != nil {
+		return nil, fmt.Errorf("list due lead sources: %w", err)
+	}
+	defer rows.Close()
+	out := []LeadSource{}
+	for rows.Next() {
+		s, err := scanSource(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// RecordCollectResult 原子更新信息源调度状态并写入一条采集运行记录。
+func (r *Repository) RecordCollectResult(ctx context.Context, sourceID int64, success bool, startedAt, nextAt time.Time, st CollectRunStats, errMsg string) error {
+	status := CollectStatusSuccess
+	if !success {
+		status = CollectStatusFailed
+	}
+	_, err := r.pool.Exec(ctx, `
+		WITH upd AS (
+			UPDATE lead_sources
+			SET last_collected_at = $2,
+			    next_collect_at = $3,
+			    consecutive_failures = CASE WHEN $4::boolean THEN 0 ELSE consecutive_failures + 1 END,
+			    last_error = CASE WHEN $4::boolean THEN NULL ELSE NULLIF($5, '') END,
+			    last_error_at = CASE WHEN $4::boolean THEN NULL ELSE now() END,
+			    updated_at = now()
+			WHERE id = $1
+			RETURNING id
+		)
+		INSERT INTO prospect_collect_runs (
+			source_id, status, fetched, ingested, duplicate, opted_out, invalid, failed,
+			error_message, started_at, finished_at
+		)
+		SELECT id, $6, $7, $8, $9, $10, $11, $12, NULLIF($5, ''), $2, now() FROM upd
+	`, sourceID, startedAt, nextAt, success, errMsg, status,
+		st.Fetched, st.Ingested, st.Duplicate, st.OptedOut, st.Invalid, st.Failed)
+	if err != nil {
+		return fmt.Errorf("record collect result: %w", err)
+	}
+	return nil
+}
+
+// ListCollectRuns 采集运行记录列表，可按信息源 UUID 过滤。
+func (r *Repository) ListCollectRuns(ctx context.Context, sourceUUID string, limit int) ([]CollectRun, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT cr.id, s.uuid::text, s.name, cr.status, cr.fetched, cr.ingested, cr.duplicate,
+		       cr.opted_out, cr.invalid, cr.failed, COALESCE(cr.error_message, ''),
+		       `+fmt.Sprintf(tsFmt, "cr.started_at")+`, `+fmt.Sprintf(tsFmt, "cr.finished_at")+`
+		FROM prospect_collect_runs cr
+		JOIN lead_sources s ON s.id = cr.source_id
+		WHERE ($1 = '' OR s.uuid::text = $1)
+		ORDER BY cr.started_at DESC, cr.id DESC
+		LIMIT $2
+	`, sourceUUID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list collect runs: %w", err)
+	}
+	defer rows.Close()
+	out := []CollectRun{}
+	for rows.Next() {
+		var c CollectRun
+		if err := rows.Scan(&c.ID, &c.SourceUUID, &c.SourceName, &c.Status,
+			&c.Stats.Fetched, &c.Stats.Ingested, &c.Stats.Duplicate, &c.Stats.OptedOut,
+			&c.Stats.Invalid, &c.Stats.Failed, &c.ErrorMessage, &c.StartedAt, &c.FinishedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
 	}
 	return out, rows.Err()
 }

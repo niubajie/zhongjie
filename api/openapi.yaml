@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.13.0
+  version: 0.14.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
@@ -1352,6 +1352,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReminderListEnvelope"
+  /v1/admin/prospects/collect-runs:
+    get:
+      tags: [prospect]
+      summary: 采集运行记录（批次12，按信息源过滤，含失败原因与统计）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sourceUuid
+          in: query
+          schema: {type: string, format: uuid}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50, maximum: 200}
+      responses:
+        "200":
+          description: 采集运行记录列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectCollectRunListEnvelope"
   /v1/admin/prospects/{uuid}/status:
     post:
       tags: [prospect]
@@ -2241,6 +2261,11 @@ components:
         kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
         baseUrl: {type: string}
         rateLimitMs: {type: integer, minimum: 0}
+        collectIntervalMinutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+          description: 采集间隔（分钟），不传默认 60
         reviewNote: {type: string}
     UpdateLeadSourceInput:
       type: object
@@ -2250,6 +2275,10 @@ components:
         kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
         baseUrl: {type: string}
         rateLimitMs: {type: integer, minimum: 0}
+        collectIntervalMinutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
         robotsOk: {type: boolean}
         termsOk: {type: boolean}
         reviewNote: {type: string}
@@ -2263,6 +2292,12 @@ components:
         robotsOk: {type: boolean}
         termsOk: {type: boolean}
         rateLimitMs: {type: integer}
+        collectIntervalMinutes: {type: integer}
+        lastCollectedAt: {type: string}
+        nextCollectAt: {type: string}
+        consecutiveFailures: {type: integer}
+        lastError: {type: string}
+        lastErrorAt: {type: string}
         enabled: {type: boolean}
         reviewNote: {type: string}
         createdAt: {type: string}
@@ -2288,6 +2323,37 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/LeadSource"
+    ProspectCollectRun:
+      type: object
+      description: 一次采集尝试的运行记录（批次12）
+      properties:
+        id: {type: integer}
+        sourceUuid: {type: string, format: uuid}
+        sourceName: {type: string}
+        status: {type: string, enum: [success, failed]}
+        fetched: {type: integer}
+        ingested: {type: integer}
+        duplicate: {type: integer}
+        optedOut: {type: integer}
+        invalid: {type: integer}
+        failed: {type: integer}
+        errorMessage: {type: string}
+        startedAt: {type: string}
+        finishedAt: {type: string}
+    ProspectCollectRunListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectCollectRun"
+    ProspectCollectRunListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectCollectRunListData"
     ProspectLead:
       type: object
       description: 对外线索视图，不含原文密文与联系方式明文

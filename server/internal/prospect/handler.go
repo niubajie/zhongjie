@@ -29,6 +29,7 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.GET("/prospects/review-queue", h.listReviewQueue)
 	r.GET("/prospects/opt-outs", h.listOptOuts)
 	r.GET("/prospects/reminders", h.listReminders)
+	r.GET("/prospects/collect-runs", h.listCollectRuns)
 	r.GET("/prospects/notifications", h.listNotifications)
 	r.POST("/prospects/notifications/:id/read", h.markNotificationRead)
 	r.GET("/prospects/stats", h.getStats)
@@ -332,6 +333,26 @@ func (h *Handler) listReminders(c *gin.Context) {
 	items, err := h.svc.ListReminders(c.Request.Context(), limit)
 	if err != nil {
 		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载跟进提醒失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+// ---- 批次 12：采集运行记录 ----
+
+func (h *Handler) listCollectRuns(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	items, err := h.svc.ListCollectRuns(c.Request.Context(), c.Query("sourceUuid"), limit)
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载采集运行记录失败")
 		return
 	}
 	httpx.OK(c, gin.H{"items": items})

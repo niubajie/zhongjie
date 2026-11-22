@@ -188,18 +188,24 @@ func ValidAdminTargetStatus(s string) bool {
 
 // LeadSource 信息源配置，也是单源停机开关的载体。
 type LeadSource struct {
-	ID          int64
-	UUID        string
-	Name        string
-	Kind        string
-	BaseURL     string
-	RobotsOK    bool
-	TermsOK     bool
-	RateLimitMs int
-	Enabled     bool
-	ReviewNote  string
-	CreatedAt   string
-	UpdatedAt   string
+	ID                     int64
+	UUID                   string
+	Name                   string
+	Kind                   string
+	BaseURL                string
+	RobotsOK               bool
+	TermsOK                bool
+	RateLimitMs            int
+	Enabled                bool
+	ReviewNote             string
+	CollectIntervalMinutes int
+	LastCollectedAt        string
+	NextCollectAt          string
+	ConsecutiveFailures    int
+	LastError              string
+	LastErrorAt            string
+	CreatedAt              string
+	UpdatedAt              string
 }
 
 // ProspectLead 潜在线索。raw_text_enc / contact_hash 为密文与哈希，
@@ -255,25 +261,32 @@ type OptOut struct {
 // ---- DTO（API 输入输出，JSON 字段 camelCase）----
 
 type CreateSourceInput struct {
-	Name        string `json:"name"`
-	Kind        string `json:"kind"`
-	BaseURL     string `json:"baseUrl,omitempty"`
-	RateLimitMs int    `json:"rateLimitMs,omitempty"`
-	ReviewNote  string `json:"reviewNote,omitempty"`
+	Name                   string `json:"name"`
+	Kind                   string `json:"kind"`
+	BaseURL                string `json:"baseUrl,omitempty"`
+	RateLimitMs            int    `json:"rateLimitMs,omitempty"`
+	CollectIntervalMinutes int    `json:"collectIntervalMinutes,omitempty"`
+	ReviewNote             string `json:"reviewNote,omitempty"`
 }
 
 type LeadSourceVO struct {
-	UUID        string `json:"uuid"`
-	Name        string `json:"name"`
-	Kind        string `json:"kind"`
-	BaseURL     string `json:"baseUrl,omitempty"`
-	RobotsOK    bool   `json:"robotsOk"`
-	TermsOK     bool   `json:"termsOk"`
-	RateLimitMs int    `json:"rateLimitMs"`
-	Enabled     bool   `json:"enabled"`
-	ReviewNote  string `json:"reviewNote,omitempty"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	UUID                   string `json:"uuid"`
+	Name                   string `json:"name"`
+	Kind                   string `json:"kind"`
+	BaseURL                string `json:"baseUrl,omitempty"`
+	RobotsOK               bool   `json:"robotsOk"`
+	TermsOK                bool   `json:"termsOk"`
+	RateLimitMs            int    `json:"rateLimitMs"`
+	CollectIntervalMinutes int    `json:"collectIntervalMinutes"`
+	LastCollectedAt        string `json:"lastCollectedAt,omitempty"`
+	NextCollectAt          string `json:"nextCollectAt,omitempty"`
+	ConsecutiveFailures    int    `json:"consecutiveFailures"`
+	LastError              string `json:"lastError,omitempty"`
+	LastErrorAt            string `json:"lastErrorAt,omitempty"`
+	Enabled                bool   `json:"enabled"`
+	ReviewNote             string `json:"reviewNote,omitempty"`
+	CreatedAt              string `json:"createdAt"`
+	UpdatedAt              string `json:"updatedAt"`
 }
 
 // ProspectLeadVO 是对外返回的线索视图，不含密文字段。
@@ -318,13 +331,14 @@ type KillSwitchState struct {
 
 // UpdateSourceInput 信息源更新（全量覆盖可编辑字段）。
 type UpdateSourceInput struct {
-	Name        string `json:"name"`
-	Kind        string `json:"kind"`
-	BaseURL     string `json:"baseUrl,omitempty"`
-	RateLimitMs int    `json:"rateLimitMs,omitempty"`
-	RobotsOK    bool   `json:"robotsOk"`
-	TermsOK     bool   `json:"termsOk"`
-	ReviewNote  string `json:"reviewNote,omitempty"`
+	Name                   string `json:"name"`
+	Kind                   string `json:"kind"`
+	BaseURL                string `json:"baseUrl,omitempty"`
+	RateLimitMs            int    `json:"rateLimitMs,omitempty"`
+	CollectIntervalMinutes int    `json:"collectIntervalMinutes,omitempty"`
+	RobotsOK               bool   `json:"robotsOk"`
+	TermsOK                bool   `json:"termsOk"`
+	ReviewNote             string `json:"reviewNote,omitempty"`
 }
 
 // ---- 批次 5：人工复核与首条联系 ----
@@ -495,4 +509,58 @@ type AdminNotificationVO struct {
 type AdminNotificationListVO struct {
 	Items  []AdminNotificationVO `json:"items"`
 	Unread int64                 `json:"unread"`
+}
+
+// ---- 批次 12：采集定时调度与失败重试 ----
+
+// 采集间隔约束与默认值（数据库 CHECK 与 API 校验保持一致）。
+const (
+	DefaultCollectIntervalMinutes = 60
+	MinCollectIntervalMinutes     = 5
+	MaxCollectIntervalMinutes     = 1440
+)
+
+// 采集运行记录状态。
+const (
+	CollectStatusSuccess = "success"
+	CollectStatusFailed  = "failed"
+)
+
+// CollectRunStats 单次采集尝试的统计，随运行记录一起落库。
+type CollectRunStats struct {
+	Fetched   int
+	Ingested  int
+	Duplicate int
+	OptedOut  int
+	Invalid   int
+	Failed    int
+}
+
+// CollectRun 采集运行记录实体。
+type CollectRun struct {
+	ID           int64
+	SourceUUID   string
+	SourceName   string
+	Status       string
+	Stats        CollectRunStats
+	ErrorMessage string
+	StartedAt    string
+	FinishedAt   string
+}
+
+// CollectRunVO 采集运行记录视图。
+type CollectRunVO struct {
+	ID           int64  `json:"id"`
+	SourceUUID   string `json:"sourceUuid"`
+	SourceName   string `json:"sourceName"`
+	Status       string `json:"status"`
+	Fetched      int    `json:"fetched"`
+	Ingested     int    `json:"ingested"`
+	Duplicate    int    `json:"duplicate"`
+	OptedOut     int    `json:"optedOut"`
+	Invalid      int    `json:"invalid"`
+	Failed       int    `json:"failed"`
+	ErrorMessage string `json:"errorMessage,omitempty"`
+	StartedAt    string `json:"startedAt"`
+	FinishedAt   string `json:"finishedAt"`
 }

@@ -4,6 +4,7 @@ import {
   contactProspect,
   createLeadSource,
   deleteLeadSource,
+  fetchCollectRuns,
   fetchKillSwitch,
   fetchLeadSources,
   fetchOptOuts,
@@ -30,6 +31,7 @@ import {
   type LeadType,
   type OptOut,
   type ProspectContactChannel,
+  type ProspectCollectRun,
   type ProspectIntentStatus,
   type ProspectLead,
   type ProspectLeadDetail,
@@ -185,6 +187,7 @@ interface SourceForm {
   kind: LeadSourceKind
   baseUrl: string
   rateLimitMs: string
+  collectIntervalMinutes: string
   reviewNote: string
   robotsOk: boolean
   termsOk: boolean
@@ -197,6 +200,7 @@ function emptySourceForm(): SourceForm {
     kind: 'self_owned',
     baseUrl: '',
     rateLimitMs: '',
+    collectIntervalMinutes: '60',
     reviewNote: '',
     robotsOk: true,
     termsOk: true,
@@ -214,6 +218,10 @@ export default function Prospecting({ token }: { token: string }) {
   const [sourceBusy, setSourceBusy] = useState(false)
   const [sourceMsg, setSourceMsg] = useState('')
   const [form, setForm] = useState<SourceForm>(emptySourceForm)
+
+  const [collectRuns, setCollectRuns] = useState<ProspectCollectRun[]>([])
+  const [collectRunsLoading, setCollectRunsLoading] = useState(true)
+  const [collectRunsError, setCollectRunsError] = useState('')
 
   const [queueType, setQueueType] = useState<LeadType | ''>('')
   const [queue, setQueue] = useState<ProspectLead[]>([])
@@ -295,6 +303,31 @@ export default function Prospecting({ token }: { token: string }) {
       .finally(() => {
         if (!cancelled) {
           setSourcesLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  useEffect(() => {
+    let cancelled = false
+    setCollectRunsLoading(true)
+    fetchCollectRuns(token)
+      .then((items) => {
+        if (!cancelled) {
+          setCollectRuns(items)
+          setCollectRunsError('')
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setCollectRunsError(err.message || '采集运行记录加载失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCollectRunsLoading(false)
         }
       })
     return () => {
@@ -462,6 +495,17 @@ export default function Prospecting({ token }: { token: string }) {
       .catch((err: Error) => setSourcesError(err.message || '信息源加载失败'))
   }
 
+  function refreshCollectRuns() {
+    setCollectRunsLoading(true)
+    return fetchCollectRuns(token)
+      .then((items) => {
+        setCollectRuns(items)
+        setCollectRunsError('')
+      })
+      .catch((err: Error) => setCollectRunsError(err.message || '采集运行记录加载失败'))
+      .finally(() => setCollectRunsLoading(false))
+  }
+
   function refreshQueue() {
     return fetchReviewQueue(token, queueType)
       .then((items) => {
@@ -578,6 +622,10 @@ export default function Prospecting({ token }: { token: string }) {
     if (Number.isFinite(rate) && rate > 0) {
       base.rateLimitMs = Math.trunc(rate)
     }
+    const interval = Number(form.collectIntervalMinutes)
+    if (Number.isFinite(interval) && interval > 0) {
+      base.collectIntervalMinutes = Math.trunc(interval)
+    }
     const editing = Boolean(form.uuid)
     setSourceBusy(true)
     setSourceMsg('')
@@ -588,7 +636,7 @@ export default function Prospecting({ token }: { token: string }) {
       .then(() => {
         setSourceMsg(editing ? '信息源已更新' : '信息源已新增')
         setForm(emptySourceForm())
-        return refreshSources()
+        return Promise.all([refreshSources(), refreshCollectRuns()])
       })
       .catch((err: Error) => setSourceMsg(err.message || '保存信息源失败'))
       .finally(() => setSourceBusy(false))
@@ -602,6 +650,7 @@ export default function Prospecting({ token }: { token: string }) {
       kind: source.kind,
       baseUrl: source.baseUrl ?? '',
       rateLimitMs: source.rateLimitMs > 0 ? String(source.rateLimitMs) : '',
+      collectIntervalMinutes: String(source.collectIntervalMinutes || 60),
       reviewNote: source.reviewNote ?? '',
       robotsOk: source.robotsOk,
       termsOk: source.termsOk,
@@ -862,6 +911,8 @@ export default function Prospecting({ token }: { token: string }) {
               <th>robots</th>
               <th>条款</th>
               <th>限速</th>
+              <th>采集间隔</th>
+              <th>下次采集</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -878,6 +929,13 @@ export default function Prospecting({ token }: { token: string }) {
                 <td>{source.robotsOk ? '是' : '否'}</td>
                 <td>{source.termsOk ? '是' : '否'}</td>
                 <td>{source.rateLimitMs > 0 ? `${source.rateLimitMs} ms` : '—'}</td>
+                <td>{source.collectIntervalMinutes} 分钟</td>
+                <td>
+                  {source.nextCollectAt || '待首次采集'}
+                  {source.consecutiveFailures > 0 && (
+                    <span className="muted">（连续失败 {source.consecutiveFailures} 次）</span>
+                  )}
+                </td>
                 <td>
                   <button
                     className="table-action"
@@ -905,14 +963,14 @@ export default function Prospecting({ token }: { token: string }) {
             ))}
             {sourcesLoading && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={9} className="empty">
                   加载中…
                 </td>
               </tr>
             )}
             {!sourcesLoading && sources.length === 0 && (
               <tr>
-                <td colSpan={7} className="empty">
+                <td colSpan={9} className="empty">
                   暂无信息源
                 </td>
               </tr>
@@ -948,6 +1006,12 @@ export default function Prospecting({ token }: { token: string }) {
             value={form.rateLimitMs}
             onChange={(e) => setForm({ ...form, rateLimitMs: e.target.value })}
             placeholder="限速毫秒（可选）"
+            inputMode="numeric"
+          />
+          <input
+            value={form.collectIntervalMinutes}
+            onChange={(e) => setForm({ ...form, collectIntervalMinutes: e.target.value })}
+            placeholder="采集间隔分钟（5-1440，默认 60）"
             inputMode="numeric"
           />
           <input
@@ -993,6 +1057,73 @@ export default function Prospecting({ token }: { token: string }) {
         </div>
         {sourceMsg && <p className="muted">{sourceMsg}</p>}
       </form>
+
+      <h3 className="sub-head">采集运行记录（最近 50 次）</h3>
+      <div className="prospect-toolbar">
+        <button
+          className="btn secondary"
+          onClick={() => refreshCollectRuns()}
+          disabled={collectRunsLoading}
+        >
+          刷新
+        </button>
+        <span className="muted">
+          {collectRunsLoading ? '加载中…' : `共 ${collectRuns.length} 条`}
+        </span>
+      </div>
+      {collectRunsError && <div className="alert">{collectRunsError}</div>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>开始时间</th>
+              <th>信息源</th>
+              <th>结果</th>
+              <th>拉取</th>
+              <th>入库</th>
+              <th>重复</th>
+              <th>拒收</th>
+              <th>非法</th>
+              <th>失败</th>
+              <th>错误信息</th>
+            </tr>
+          </thead>
+          <tbody>
+            {collectRuns.map((run) => (
+              <tr key={run.id}>
+                <td>{run.startedAt}</td>
+                <td>{run.sourceName}</td>
+                <td>
+                  <span className={`status ${run.status === 'success' ? 'status-active' : 'status-offline'}`}>
+                    {run.status === 'success' ? '成功' : '失败'}
+                  </span>
+                </td>
+                <td>{run.fetched}</td>
+                <td>{run.ingested}</td>
+                <td>{run.duplicate}</td>
+                <td>{run.optedOut}</td>
+                <td>{run.invalid}</td>
+                <td>{run.failed}</td>
+                <td>{run.errorMessage || '—'}</td>
+              </tr>
+            ))}
+            {collectRunsLoading && (
+              <tr>
+                <td colSpan={10} className="empty">
+                  加载中…
+                </td>
+              </tr>
+            )}
+            {!collectRunsLoading && collectRuns.length === 0 && (
+              <tr>
+                <td colSpan={10} className="empty">
+                  暂无采集运行记录（worker 每轮调度后写入）
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <h3 className="sub-head">待复核队列（评分 ≥ 70 且意向有效）</h3>
       <div className="prospect-toolbar">
