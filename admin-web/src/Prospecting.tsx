@@ -10,6 +10,7 @@ import {
   fetchProspectDetail,
   fetchProspectReminders,
   fetchProspects,
+  fetchProspectStats,
   fetchReviewQueue,
   optOutProspect,
   reviewProspect,
@@ -30,6 +31,7 @@ import {
   type ProspectLead,
   type ProspectLeadDetail,
   type ProspectReminder,
+  type ProspectStats,
   type ProspectStatus,
   type ReminderLevel,
   type ReviewDecision,
@@ -95,6 +97,47 @@ const DIRECTION_OPTIONS: FollowUpDirection[] = ['outbound', 'inbound']
 const REMINDER_LEVEL_LABEL: Record<ReminderLevel, string> = {
   due_3d: '3 天待跟进',
   overdue_7d: '7 天超期',
+}
+
+const INTENT_ORDER: ProspectIntentStatus[] = [
+  'seeking',
+  'rented',
+  'landlord_listing',
+  'agent',
+  'irrelevant',
+  'unknown',
+]
+
+function formatRate(rate: number): string {
+  return `${Math.round(rate * 1000) / 10}%`
+}
+
+interface BarItem {
+  key: string
+  label: string
+  count: number
+}
+
+function renderBars(items: BarItem[], total: number) {
+  if (items.length === 0) {
+    return <p className="muted">暂无数据</p>
+  }
+  return (
+    <div className="bar-list">
+      {items.map((item) => {
+        const pct = total > 0 ? Math.round((item.count / total) * 100) : 0
+        return (
+          <div className="bar-row" key={item.key}>
+            <span className="bar-label">{item.label}</span>
+            <span className="bar-track">
+              <span className="bar-fill" style={{ width: `${pct}%` }} />
+            </span>
+            <span className="bar-value">{item.count}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 const LEAD_TYPES: LeadType[] = ['tenant', 'landlord']
@@ -196,6 +239,10 @@ export default function Prospecting({ token }: { token: string }) {
   const [reminders, setReminders] = useState<ProspectReminder[]>([])
   const [remindersLoading, setRemindersLoading] = useState(true)
   const [remindersError, setRemindersError] = useState('')
+
+  const [stats, setStats] = useState<ProspectStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(true)
+  const [statsError, setStatsError] = useState('')
 
   const [optOutType, setOptOutType] = useState<LeadType | ''>('')
   const [optOuts, setOptOuts] = useState<OptOut[]>([])
@@ -346,6 +393,31 @@ export default function Prospecting({ token }: { token: string }) {
     }
   }, [token])
 
+  useEffect(() => {
+    let cancelled = false
+    setStatsLoading(true)
+    fetchProspectStats(token)
+      .then((data) => {
+        if (!cancelled) {
+          setStats(data)
+          setStatsError('')
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setStatsError(err.message || '获客统计加载失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setStatsLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
   function refreshSources() {
     return fetchLeadSources(token)
       .then((items) => {
@@ -389,6 +461,15 @@ export default function Prospecting({ token }: { token: string }) {
         setRemindersError('')
       })
       .catch((err: Error) => setRemindersError(err.message || '跟进提醒加载失败'))
+  }
+
+  function refreshStats() {
+    return fetchProspectStats(token)
+      .then((data) => {
+        setStats(data)
+        setStatsError('')
+      })
+      .catch((err: Error) => setStatsError(err.message || '获客统计加载失败'))
   }
 
   function refreshDetail(uuid: string) {
@@ -510,7 +591,7 @@ export default function Prospecting({ token }: { token: string }) {
     reviewProspect(token, lead.uuid, decision)
       .then((updated) => {
         setActionMsg(`已${decision === 'approve' ? '通过' : '拒绝'}：${STATUS_LABEL[updated.status]}`)
-        return Promise.all([refreshQueue(), refreshLeads()])
+        return Promise.all([refreshQueue(), refreshLeads(), refreshStats()])
       })
       .then(() => {
         if (detail && detail.uuid === lead.uuid) {
@@ -539,7 +620,12 @@ export default function Prospecting({ token }: { token: string }) {
       .then((followUp) => {
         setActionMsg(`首条联系已记录（${CHANNEL_LABEL[followUp.channel]} · ${followUp.status}）`)
         setContactContent('')
-        return Promise.all([refreshDetail(current.uuid), refreshLeads(), refreshQueue()])
+        return Promise.all([
+          refreshDetail(current.uuid),
+          refreshLeads(),
+          refreshQueue(),
+          refreshStats(),
+        ])
       })
       .catch((err: Error) => setActionMsg(err.message || '发起联系失败'))
       .finally(() => setActionBusy(false))
@@ -569,6 +655,7 @@ export default function Prospecting({ token }: { token: string }) {
           refreshLeads(),
           refreshQueue(),
           refreshReminders(),
+          refreshStats(),
         ])
       })
       .catch((err: Error) => setActionMsg(err.message || '记录跟进失败'))
@@ -590,6 +677,7 @@ export default function Prospecting({ token }: { token: string }) {
           refreshLeads(),
           refreshQueue(),
           refreshReminders(),
+          refreshStats(),
         ])
       })
       .catch((err: Error) => setActionMsg(err.message || '流转状态失败'))
@@ -613,6 +701,7 @@ export default function Prospecting({ token }: { token: string }) {
           refreshQueue(),
           refreshOptOuts(),
           refreshReminders(),
+          refreshStats(),
         ])
       })
       .catch((err: Error) => setActionMsg(err.message || '拒收失败'))
@@ -643,6 +732,69 @@ export default function Prospecting({ token }: { token: string }) {
           {killBusy ? '处理中…' : kill?.halted ? '恢复运行' : '立即停机'}
         </button>
       </div>
+
+      <h3 className="sub-head">获客效果</h3>
+      <p className="muted">状态与意向分布，以及联系 / 转化关键指标。</p>
+      {statsError && <div className="alert">{statsError}</div>}
+      {statsLoading && !stats && <p className="muted">加载中…</p>}
+      {stats && (
+        <>
+          <div className="stats">
+            <div className="stat">
+              <span className="stat-label">线索总数</span>
+              <strong className="stat-value">{stats.totalLeads}</strong>
+            </div>
+            <div className="stat">
+              <span className="stat-label">待复核</span>
+              <strong className="stat-value">{stats.reviewPending}</strong>
+            </div>
+            <div className="stat">
+              <span className="stat-label">已联系</span>
+              <strong className="stat-value">{stats.contactedLeads}</strong>
+            </div>
+            <div className="stat">
+              <span className="stat-label">已转化</span>
+              <strong className="stat-value">{stats.convertedLeads}</strong>
+            </div>
+            <div className="stat">
+              <span className="stat-label">转化率</span>
+              <strong className="stat-value">{formatRate(stats.conversionRate)}</strong>
+            </div>
+            <div className="stat">
+              <span className="stat-label">超期线索</span>
+              <strong className="stat-value">{stats.staleLeads}</strong>
+            </div>
+            <div className="stat">
+              <span className="stat-label">未处理提醒</span>
+              <strong className="stat-value">{stats.openReminders}</strong>
+            </div>
+          </div>
+          <div className="stat-columns">
+            <div>
+              <h4>状态分布</h4>
+              {renderBars(
+                PROSPECT_STATUSES.map((status) => ({
+                  key: status,
+                  label: STATUS_LABEL[status],
+                  count: stats.byStatus.find((item) => item.status === status)?.count ?? 0,
+                })).filter((item) => item.count > 0),
+                stats.totalLeads,
+              )}
+            </div>
+            <div>
+              <h4>意向分布</h4>
+              {renderBars(
+                INTENT_ORDER.map((intent) => ({
+                  key: intent,
+                  label: INTENT_LABEL[intent],
+                  count: stats.byIntent.find((item) => item.intentStatus === intent)?.count ?? 0,
+                })).filter((item) => item.count > 0),
+                stats.totalLeads,
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <h3 className="sub-head">信息源</h3>
       <p className="muted">自有 / 公开 API / 第三方采集三类来源，单源可独立启停。</p>

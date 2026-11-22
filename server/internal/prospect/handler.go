@@ -29,6 +29,7 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.GET("/prospects/review-queue", h.listReviewQueue)
 	r.GET("/prospects/opt-outs", h.listOptOuts)
 	r.GET("/prospects/reminders", h.listReminders)
+	r.GET("/prospects/stats", h.getStats)
 	r.GET("/prospects/kill-switch", h.getKillSwitch)
 	r.PUT("/prospects/kill-switch", h.setKillSwitch)
 	r.GET("/prospects/:uuid", h.getLead)
@@ -332,6 +333,20 @@ func (h *Handler) listReminders(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"items": items})
+}
+
+// ---- 批次 10：获客效果统计 ----
+
+func (h *Handler) getStats(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	stats, err := h.svc.GetStats(c.Request.Context())
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载获客统计失败")
+		return
+	}
+	httpx.OK(c, stats)
 }
 
 // ---- 批次 2：全局停机开关 ----

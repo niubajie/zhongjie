@@ -435,3 +435,30 @@ type ReminderStats struct {
 	Overdue int `json:"overdue"`
 	Stale   int `json:"stale"`
 }
+
+// ---- 批次 10：获客效果统计 ----
+
+// StatusCount 状态分布。
+type StatusCount struct {
+	Status string `json:"status"`
+	Count  int64  `json:"count"`
+}
+
+// IntentCount 意向分布。
+type IntentCount struct {
+	IntentStatus string `json:"intentStatus"`
+	Count        int64  `json:"count"`
+}
+
+// ProspectStatsVO 获客效果统计。转化率 = 已转化 / 至少有一条外呼跟进的线索数。
+type ProspectStatsVO struct {
+	TotalLeads     int64         `json:"totalLeads"`
+	ReviewPending  int64         `json:"reviewPending"`
+	ContactedLeads int64         `json:"contactedLeads"`
+	ConvertedLeads int64         `json:"convertedLeads"`
+	ConversionRate float64       `json:"conversionRate"`
+	StaleLeads     int64         `json:"staleLeads"`
+	OpenReminders  int64         `json:"openReminders"`
+	ByStatus       []StatusCount `json:"byStatus"`
+	ByIntent       []IntentCount `json:"byIntent"`
+}

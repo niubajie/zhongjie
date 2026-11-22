@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.11.0
+  version: 0.12.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
@@ -1260,6 +1260,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FollowUpEnvelope"
+  /v1/admin/prospects/stats:
+    get:
+      tags: [prospect]
+      summary: 获客效果统计（批次10，状态/意向分布与转化指标）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 获客统计
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectStatsEnvelope"
   /v1/admin/prospects/{uuid}/follow-ups:
     post:
       tags: [prospect]
@@ -2383,6 +2396,41 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/ReminderListData"
+    StatusCount:
+      type: object
+      properties:
+        status: {type: string}
+        count: {type: integer}
+    IntentCount:
+      type: object
+      properties:
+        intentStatus: {type: string}
+        count: {type: integer}
+    ProspectStats:
+      type: object
+      properties:
+        totalLeads: {type: integer}
+        reviewPending: {type: integer, description: 待复核队列数量}
+        contactedLeads: {type: integer, description: 至少有一条外呼跟进记录的线索数}
+        convertedLeads: {type: integer}
+        conversionRate: {type: number, description: 已转化 / 已联系，0–1}
+        staleLeads: {type: integer, description: 已超期且仍在跟进阶段的线索数}
+        openReminders: {type: integer}
+        byStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+        byIntent:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntentCount"
+    ProspectStatsEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectStats"
     TransitionLeadInput:
       type: object
       required: [status]

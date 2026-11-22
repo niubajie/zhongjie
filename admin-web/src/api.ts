@@ -603,6 +603,32 @@ export async function contactProspect(
   )
 }
 
+export interface StatusCount {
+  status: ProspectStatus
+  count: number
+}
+
+export interface IntentCount {
+  intentStatus: ProspectIntentStatus
+  count: number
+}
+
+export interface ProspectStats {
+  totalLeads: number
+  reviewPending: number
+  contactedLeads: number
+  convertedLeads: number
+  conversionRate: number
+  staleLeads: number
+  openReminders: number
+  byStatus: StatusCount[]
+  byIntent: IntentCount[]
+}
+
+export async function fetchProspectStats(token: string): Promise<ProspectStats> {
+  return request<ProspectStats>('/v1/admin/prospects/stats', {}, token)
+}
+
 export async function fetchProspectReminders(
   token: string,
   limit = 50,
