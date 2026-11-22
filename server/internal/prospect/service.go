@@ -13,9 +13,11 @@ import (
 // Service 承载业务判断；采集 / 评分 / 联系 / 跟进在后续批次扩展。
 // 批次 1 只提供信息源与线索的基础读写，不启用采集。
 type Service struct {
-	repo   *Repository
-	pii    *secure.PII
-	halted atomic.Bool
+	repo         *Repository
+	pii          *secure.PII
+	halted       atomic.Bool
+	notifier     ReminderNotifier
+	notifyUserID int64
 }
 
 func NewService(repo *Repository, pii *secure.PII) *Service {

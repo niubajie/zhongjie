@@ -58,6 +58,9 @@ type Config struct {
 	// Map of subscribe-message template fields, e.g.
 	// "thing1=reminder,thing2=title,thing3=location".
 	NotifyFields string
+
+	// AdminNotifyUserID 接收获客提醒微信模板的用户 ID；0 表示不开启微信外发。
+	AdminNotifyUserID int64
 }
 
 func Load() (Config, error) {
@@ -117,6 +120,12 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("ADMIN_JWT_ACCESS_TTL: %w", err)
 	}
 	cfg.AdminJWTAccessTTL = adminTTL
+
+	adminNotifyUserID, err := strconv.ParseInt(getenv("ADMIN_NOTIFY_USER_ID", "0"), 10, 64)
+	if err != nil {
+		return Config{}, fmt.Errorf("ADMIN_NOTIFY_USER_ID: %w", err)
+	}
+	cfg.AdminNotifyUserID = adminNotifyUserID
 
 	devLogin, err := strconv.ParseBool(getenv("DEV_LOGIN_ENABLED", boolString(env == "dev")))
 	if err != nil {

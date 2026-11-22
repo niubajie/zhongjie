@@ -11,18 +11,19 @@ import (
 // 停机开关默认关闭，主链路零影响。
 
 var (
-	ErrSourceNotFound     = errors.New("信息源不存在")
-	ErrLeadNotFound       = errors.New("线索不存在")
-	ErrDuplicateLead      = errors.New("线索已存在")
-	ErrDuplicateSource    = errors.New("信息源名称已存在")
-	ErrInvalidSourceInput = errors.New("信息源参数不合法")
-	ErrOptOutExists       = errors.New("该联系方式已在拒收名单")
-	ErrInvalidStatus      = errors.New("无效的线索状态")
-	ErrInvalidTransition  = errors.New("不允许的状态转换")
-	ErrHalted             = errors.New("全局停机开关已开启，暂停联系")
-	ErrInvalidReview      = errors.New("无效的复核结论")
-	ErrInvalidContact     = errors.New("联系参数不合法")
-	ErrInvalidFollowUp    = errors.New("跟进参数不合法")
+	ErrSourceNotFound       = errors.New("信息源不存在")
+	ErrLeadNotFound         = errors.New("线索不存在")
+	ErrDuplicateLead        = errors.New("线索已存在")
+	ErrDuplicateSource      = errors.New("信息源名称已存在")
+	ErrInvalidSourceInput   = errors.New("信息源参数不合法")
+	ErrOptOutExists         = errors.New("该联系方式已在拒收名单")
+	ErrInvalidStatus        = errors.New("无效的线索状态")
+	ErrInvalidTransition    = errors.New("不允许的状态转换")
+	ErrHalted               = errors.New("全局停机开关已开启，暂停联系")
+	ErrInvalidReview        = errors.New("无效的复核结论")
+	ErrInvalidContact       = errors.New("联系参数不合法")
+	ErrInvalidFollowUp      = errors.New("跟进参数不合法")
+	ErrNotificationNotFound = errors.New("通知不存在")
 )
 
 // 线索类型
@@ -403,6 +404,7 @@ type AddFollowUpInput struct {
 type FollowUpCandidate struct {
 	ID           int64
 	UUID         string
+	LeadType     string
 	Status       string
 	LastActivity time.Time
 	Stale        bool
@@ -461,4 +463,36 @@ type ProspectStatsVO struct {
 	OpenReminders  int64         `json:"openReminders"`
 	ByStatus       []StatusCount `json:"byStatus"`
 	ByIntent       []IntentCount `json:"byIntent"`
+}
+
+// ---- 批次 11：管理员站内通知 ----
+
+// AdminNotification 站内通知实体。
+type AdminNotification struct {
+	ID        int64
+	EventType string
+	Level     string
+	Title     string
+	Body      string
+	LeadUUID  string
+	Status    string
+	CreatedAt string
+}
+
+// AdminNotificationVO 站内通知视图。
+type AdminNotificationVO struct {
+	ID        int64  `json:"id"`
+	EventType string `json:"eventType"`
+	Level     string `json:"level"`
+	Title     string `json:"title"`
+	Body      string `json:"body"`
+	LeadUUID  string `json:"leadUuid,omitempty"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// AdminNotificationListVO 通知列表与未读数。
+type AdminNotificationListVO struct {
+	Items  []AdminNotificationVO `json:"items"`
+	Unread int64                 `json:"unread"`
 }

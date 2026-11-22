@@ -8,16 +8,19 @@ import {
   fetchLeadSources,
   fetchOptOuts,
   fetchProspectDetail,
+  fetchProspectNotifications,
   fetchProspectReminders,
   fetchProspects,
   fetchProspectStats,
   fetchReviewQueue,
+  markProspectNotificationRead,
   optOutProspect,
   reviewProspect,
   setKillSwitch,
   setLeadSourceEnabled,
   transitionProspect,
   updateLeadSource,
+  type AdminNotification,
   type ContactChannel,
   type CreateLeadSourceInput,
   type FollowUpDirection,
@@ -240,6 +243,12 @@ export default function Prospecting({ token }: { token: string }) {
   const [remindersLoading, setRemindersLoading] = useState(true)
   const [remindersError, setRemindersError] = useState('')
 
+  const [notifications, setNotifications] = useState<AdminNotification[]>([])
+  const [notificationsUnread, setNotificationsUnread] = useState(0)
+  const [notificationsLoading, setNotificationsLoading] = useState(true)
+  const [notificationsError, setNotificationsError] = useState('')
+  const [notificationsBusy, setNotificationsBusy] = useState(false)
+
   const [stats, setStats] = useState<ProspectStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
   const [statsError, setStatsError] = useState('')
@@ -395,6 +404,32 @@ export default function Prospecting({ token }: { token: string }) {
 
   useEffect(() => {
     let cancelled = false
+    setNotificationsLoading(true)
+    fetchProspectNotifications(token)
+      .then((data) => {
+        if (!cancelled) {
+          setNotifications(data.items)
+          setNotificationsUnread(data.unread)
+          setNotificationsError('')
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setNotificationsError(err.message || '站内通知加载失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setNotificationsLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  useEffect(() => {
+    let cancelled = false
     setStatsLoading(true)
     fetchProspectStats(token)
       .then((data) => {
@@ -461,6 +496,24 @@ export default function Prospecting({ token }: { token: string }) {
         setRemindersError('')
       })
       .catch((err: Error) => setRemindersError(err.message || '跟进提醒加载失败'))
+  }
+
+  function refreshNotifications() {
+    return fetchProspectNotifications(token)
+      .then((data) => {
+        setNotifications(data.items)
+        setNotificationsUnread(data.unread)
+        setNotificationsError('')
+      })
+      .catch((err: Error) => setNotificationsError(err.message || '站内通知加载失败'))
+  }
+
+  function markNotificationRead(id: number) {
+    setNotificationsBusy(true)
+    markProspectNotificationRead(token, id)
+      .then(() => refreshNotifications())
+      .catch((err: Error) => setNotificationsError(err.message || '标记已读失败'))
+      .finally(() => setNotificationsBusy(false))
   }
 
   function refreshStats() {
@@ -1094,6 +1147,90 @@ export default function Prospecting({ token }: { token: string }) {
               <tr>
                 <td colSpan={6} className="empty">
                   暂无跟进提醒
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="sub-head">站内通知</h3>
+      <p className="muted">
+        跟进提醒会按管理员分发站内通知，同一提醒不重复通知；未读 {notificationsUnread} 条。
+      </p>
+      <div className="prospect-toolbar">
+        <button
+          className="btn secondary"
+          onClick={() => refreshNotifications()}
+          disabled={notificationsLoading}
+        >
+          刷新
+        </button>
+        <span className="muted">
+          {notificationsLoading ? '加载中…' : `共 ${notifications.length} 条`}
+        </span>
+      </div>
+      {notificationsError && <div className="alert">{notificationsError}</div>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>标题</th>
+              <th>内容</th>
+              <th>线索</th>
+              <th>级别</th>
+              <th>状态</th>
+              <th>时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {notifications.map((item) => (
+              <tr key={item.id}>
+                <td>{item.title}</td>
+                <td>{item.body}</td>
+                <td>{item.leadUuid ? item.leadUuid.slice(0, 8) : '—'}</td>
+                <td>
+                  <span
+                    className={`status ${
+                      item.level === 'overdue_7d' ? 'status-stale' : 'status-pending'
+                    }`}
+                  >
+                    {REMINDER_LEVEL_LABEL[item.level]}
+                  </span>
+                </td>
+                <td>
+                  <span className={`status ${item.status === 'unread' ? 'status-pending' : ''}`}>
+                    {item.status === 'unread' ? '未读' : '已读'}
+                  </span>
+                </td>
+                <td>{item.createdAt}</td>
+                <td>
+                  {item.status === 'unread' ? (
+                    <button
+                      className="table-action"
+                      onClick={() => markNotificationRead(item.id)}
+                      disabled={notificationsBusy}
+                    >
+                      标记已读
+                    </button>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {notificationsLoading && (
+              <tr>
+                <td colSpan={7} className="empty">
+                  加载中…
+                </td>
+              </tr>
+            )}
+            {!notificationsLoading && notifications.length === 0 && (
+              <tr>
+                <td colSpan={7} className="empty">
+                  暂无站内通知
                 </td>
               </tr>
             )}

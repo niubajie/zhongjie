@@ -44,6 +44,7 @@ func main() {
 		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage, cfg.NotifyFields)
 	prospectRepo := prospect.NewRepository(pool)
 	prospectSvc := prospect.NewService(prospectRepo, pii)
+	prospectSvc.SetReminderNotifier(notifyRepo, cfg.AdminNotifyUserID)
 	ingestor := prospect.NewDefaultIngestor(prospectRepo, pii, log.Printf)
 
 	// 批次 4：LLM 意向评分。仅在配置了 LLM 时启用，失败不影响采集主流程。

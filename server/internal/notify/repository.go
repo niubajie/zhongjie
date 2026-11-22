@@ -46,6 +46,18 @@ func (r *Repository) Due(ctx context.Context, limit int) ([]Record, error) {
 	return out, rows.Err()
 }
 
+// EnqueueReminder 写入一条获客跟进提醒的外发记录（微信模板由 Process 统一发送）。
+func (r *Repository) EnqueueReminder(ctx context.Context, recipientID int64, payloadEnc []byte) error {
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO notification_outbox (event_type, recipient_id, payload_enc, status)
+		VALUES ('prospect_followup_reminder', $1, $2, 'pending')
+	`, recipientID, payloadEnc)
+	if err != nil {
+		return fmt.Errorf("enqueue reminder notification: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) OpenID(ctx context.Context, userID int64) (string, error) {
 	var openid string
 	err := r.pool.QueryRow(ctx, `

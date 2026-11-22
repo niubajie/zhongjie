@@ -681,6 +681,44 @@ export async function optOutProspect(
   )
 }
 
+export interface AdminNotification {
+  id: number
+  eventType: 'prospect_followup_due' | 'prospect_followup_overdue'
+  level: ReminderLevel
+  title: string
+  body: string
+  leadUuid?: string
+  status: 'unread' | 'read'
+  createdAt: string
+}
+
+export interface AdminNotificationList {
+  items: AdminNotification[]
+  unread: number
+}
+
+export async function fetchProspectNotifications(
+  token: string,
+  options: { unread?: boolean; limit?: number } = {},
+): Promise<AdminNotificationList> {
+  const params = new URLSearchParams()
+  if (options.unread) params.set('unread', 'true')
+  params.set('limit', String(options.limit ?? 50))
+  return request<AdminNotificationList>(
+    `/v1/admin/prospects/notifications?${params.toString()}`,
+    {},
+    token,
+  )
+}
+
+export async function markProspectNotificationRead(token: string, id: number): Promise<void> {
+  await request<{ read: boolean }>(
+    `/v1/admin/prospects/notifications/${id}/read`,
+    { method: 'POST', body: '{}' },
+    token,
+  )
+}
+
 export async function fetchOptOuts(
   token: string,
   leadType: LeadType | '' = '',

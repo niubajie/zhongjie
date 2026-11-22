@@ -66,7 +66,7 @@ func (r *Repository) AddFollowUp(ctx context.Context, leadID int64, channel, dir
 // 避免 stale 标记刷新 updated_at 后把计时重置。
 func (r *Repository) ListFollowUpCandidates(ctx context.Context) ([]FollowUpCandidate, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT l.id, l.uuid::text, l.status,
+		SELECT l.id, l.uuid::text, l.lead_type, l.status,
 		       COALESCE((SELECT max(f.created_at) FROM follow_ups f WHERE f.lead_id = l.id), l.created_at),
 		       l.stale_at IS NOT NULL
 		FROM prospect_leads l
@@ -80,7 +80,7 @@ func (r *Repository) ListFollowUpCandidates(ctx context.Context) ([]FollowUpCand
 	out := []FollowUpCandidate{}
 	for rows.Next() {
 		var c FollowUpCandidate
-		if err := rows.Scan(&c.ID, &c.UUID, &c.Status, &c.LastActivity, &c.Stale); err != nil {
+		if err := rows.Scan(&c.ID, &c.UUID, &c.LeadType, &c.Status, &c.LastActivity, &c.Stale); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -89,16 +89,22 @@ func (r *Repository) ListFollowUpCandidates(ctx context.Context) ([]FollowUpCand
 }
 
 // CreateReminder 幂等生成提醒：同一线索同一级别最多保留一条未处理记录。
-func (r *Repository) CreateReminder(ctx context.Context, leadID int64, level string) (bool, error) {
-	tag, err := r.pool.Exec(ctx, `
+// 返回提醒 ID；已存在未处理提醒时 inserted=false。
+func (r *Repository) CreateReminder(ctx context.Context, leadID int64, level string) (int64, bool, error) {
+	var id int64
+	err := r.pool.QueryRow(ctx, `
 		INSERT INTO prospect_reminders (lead_id, level)
 		VALUES ($1, $2)
 		ON CONFLICT (lead_id, level) WHERE status = 'open' DO NOTHING
-	`, leadID, level)
-	if err != nil {
-		return false, fmt.Errorf("create reminder: %w", err)
+		RETURNING id
+	`, leadID, level).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
 	}
-	return tag.RowsAffected() > 0, nil
+	if err != nil {
+		return 0, false, fmt.Errorf("create reminder: %w", err)
+	}
+	return id, true, nil
 }
 
 // MarkLeadStale 标记超期：只写 stale_at，不改状态。
@@ -236,11 +242,14 @@ func (s *Service) ScanFollowUpReminders(ctx context.Context, now time.Time) (Rem
 		if level == "" {
 			continue
 		}
-		inserted, err := s.repo.CreateReminder(ctx, c.ID, level)
+		reminderID, inserted, err := s.repo.CreateReminder(ctx, c.ID, level)
 		if err != nil {
 			return stats, err
 		}
 		if inserted {
+			if err := s.notifyReminder(ctx, reminderID, c, level); err != nil {
+				return stats, err
+			}
 			if level == ReminderLevelOverdue7d {
 				stats.Overdue++
 			} else {

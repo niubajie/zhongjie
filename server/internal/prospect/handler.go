@@ -29,6 +29,8 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.GET("/prospects/review-queue", h.listReviewQueue)
 	r.GET("/prospects/opt-outs", h.listOptOuts)
 	r.GET("/prospects/reminders", h.listReminders)
+	r.GET("/prospects/notifications", h.listNotifications)
+	r.POST("/prospects/notifications/:id/read", h.markNotificationRead)
 	r.GET("/prospects/stats", h.getStats)
 	r.GET("/prospects/kill-switch", h.getKillSwitch)
 	r.PUT("/prospects/kill-switch", h.setKillSwitch)
@@ -333,6 +335,47 @@ func (h *Handler) listReminders(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"items": items})
+}
+
+// ---- 批次 11：站内通知 ----
+
+func (h *Handler) listNotifications(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	unreadOnly := c.Query("unread") == "true"
+	result, err := h.svc.ListNotifications(c.Request.Context(), httpx.CurrentAdminID(c), unreadOnly, limit)
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载站内通知失败")
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *Handler) markNotificationRead(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "通知 ID 不合法")
+		return
+	}
+	if err := h.svc.MarkNotificationRead(c.Request.Context(), httpx.CurrentAdminID(c), id); err != nil {
+		if errors.Is(err, ErrNotificationNotFound) {
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "标记通知已读失败")
+		return
+	}
+	httpx.OK(c, gin.H{"read": true})
 }
 
 // ---- 批次 10：获客效果统计 ----

@@ -63,6 +63,7 @@ func (s *Service) Process(ctx context.Context, limit int) (Result, error) {
 			continue
 		}
 		var payload struct {
+			Reminder string `json:"reminder"`
 			Title    string `json:"title"`
 			District string `json:"district"`
 			Street   string `json:"street"`
@@ -74,8 +75,12 @@ func (s *Service) Process(ctx context.Context, limit int) (Result, error) {
 			result.Failed++
 			continue
 		}
+		reminderLabel := strings.TrimSpace(payload.Reminder)
+		if reminderLabel == "" {
+			reminderLabel = "租客联系提醒"
+		}
 		values := map[string]string{
-			"reminder": "租客联系提醒",
+			"reminder": reminderLabel,
 			"title":    payload.Title,
 			"district": payload.District,
 			"street":   payload.Street,
