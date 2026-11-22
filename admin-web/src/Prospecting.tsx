@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
+  addProspectFollowUp,
   contactProspect,
   createLeadSource,
   deleteLeadSource,
@@ -7,6 +8,7 @@ import {
   fetchLeadSources,
   fetchOptOuts,
   fetchProspectDetail,
+  fetchProspectReminders,
   fetchProspects,
   fetchReviewQueue,
   optOutProspect,
@@ -17,6 +19,7 @@ import {
   updateLeadSource,
   type ContactChannel,
   type CreateLeadSourceInput,
+  type FollowUpDirection,
   type KillSwitchState,
   type LeadSource,
   type LeadSourceKind,
@@ -26,7 +29,9 @@ import {
   type ProspectIntentStatus,
   type ProspectLead,
   type ProspectLeadDetail,
+  type ProspectReminder,
   type ProspectStatus,
+  type ReminderLevel,
   type ReviewDecision,
   type TransitionStatus,
 } from './api'
@@ -78,6 +83,18 @@ const CHANNEL_LABEL: Record<ContactChannel, string> = {
   sms: '短信',
   wechat: '微信',
   phone: '电话',
+}
+
+const DIRECTION_LABEL: Record<FollowUpDirection, string> = {
+  outbound: '外呼',
+  inbound: '回收',
+}
+
+const DIRECTION_OPTIONS: FollowUpDirection[] = ['outbound', 'inbound']
+
+const REMINDER_LEVEL_LABEL: Record<ReminderLevel, string> = {
+  due_3d: '3 天待跟进',
+  overdue_7d: '7 天超期',
 }
 
 const LEAD_TYPES: LeadType[] = ['tenant', 'landlord']
@@ -172,6 +189,13 @@ export default function Prospecting({ token }: { token: string }) {
   const [contactContent, setContactContent] = useState('')
   const [transitionTo, setTransitionTo] = useState<TransitionStatus>('following_up')
   const [optOutReason, setOptOutReason] = useState('')
+  const [followUpChannel, setFollowUpChannel] = useState<ContactChannel>('phone')
+  const [followUpDirection, setFollowUpDirection] = useState<FollowUpDirection>('outbound')
+  const [followUpContent, setFollowUpContent] = useState('')
+
+  const [reminders, setReminders] = useState<ProspectReminder[]>([])
+  const [remindersLoading, setRemindersLoading] = useState(true)
+  const [remindersError, setRemindersError] = useState('')
 
   const [optOutType, setOptOutType] = useState<LeadType | ''>('')
   const [optOuts, setOptOuts] = useState<OptOut[]>([])
@@ -297,6 +321,31 @@ export default function Prospecting({ token }: { token: string }) {
     }
   }, [token, optOutType])
 
+  useEffect(() => {
+    let cancelled = false
+    setRemindersLoading(true)
+    fetchProspectReminders(token)
+      .then((items) => {
+        if (!cancelled) {
+          setReminders(items)
+          setRemindersError('')
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setRemindersError(err.message || '跟进提醒加载失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRemindersLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
   function refreshSources() {
     return fetchLeadSources(token)
       .then((items) => {
@@ -333,6 +382,15 @@ export default function Prospecting({ token }: { token: string }) {
       .catch((err: Error) => setOptOutsError(err.message || '拒收名单加载失败'))
   }
 
+  function refreshReminders() {
+    return fetchProspectReminders(token)
+      .then((items) => {
+        setReminders(items)
+        setRemindersError('')
+      })
+      .catch((err: Error) => setRemindersError(err.message || '跟进提醒加载失败'))
+  }
+
   function refreshDetail(uuid: string) {
     return fetchProspectDetail(token, uuid)
       .then((item) => {
@@ -351,6 +409,7 @@ export default function Prospecting({ token }: { token: string }) {
     setDetailError('')
     setActionMsg('')
     setContactContent('')
+    setFollowUpContent('')
     setOptOutReason('')
     setDetailLoading(true)
     refreshDetail(uuid).finally(() => setDetailLoading(false))
@@ -486,6 +545,36 @@ export default function Prospecting({ token }: { token: string }) {
       .finally(() => setActionBusy(false))
   }
 
+  function sendFollowUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!detail) {
+      return
+    }
+    const current = detail
+    const content = followUpContent.trim()
+    if (!content) {
+      setActionMsg('请填写跟进内容')
+      return
+    }
+    setActionBusy(true)
+    setActionMsg('')
+    addProspectFollowUp(token, current.uuid, followUpChannel, followUpDirection, content)
+      .then((followUp) => {
+        setActionMsg(
+          `跟进已记录（${CHANNEL_LABEL[followUp.channel]} · ${DIRECTION_LABEL[followUp.direction]}）`,
+        )
+        setFollowUpContent('')
+        return Promise.all([
+          refreshDetail(current.uuid),
+          refreshLeads(),
+          refreshQueue(),
+          refreshReminders(),
+        ])
+      })
+      .catch((err: Error) => setActionMsg(err.message || '记录跟进失败'))
+      .finally(() => setActionBusy(false))
+  }
+
   function changeStatus() {
     if (!detail) {
       return
@@ -496,7 +585,12 @@ export default function Prospecting({ token }: { token: string }) {
     transitionProspect(token, current.uuid, transitionTo)
       .then((updated) => {
         setActionMsg(`状态已更新为 ${STATUS_LABEL[updated.status]}`)
-        return Promise.all([refreshDetail(updated.uuid), refreshLeads(), refreshQueue()])
+        return Promise.all([
+          refreshDetail(updated.uuid),
+          refreshLeads(),
+          refreshQueue(),
+          refreshReminders(),
+        ])
       })
       .catch((err: Error) => setActionMsg(err.message || '流转状态失败'))
       .finally(() => setActionBusy(false))
@@ -518,6 +612,7 @@ export default function Prospecting({ token }: { token: string }) {
           refreshLeads(),
           refreshQueue(),
           refreshOptOuts(),
+          refreshReminders(),
         ])
       })
       .catch((err: Error) => setActionMsg(err.message || '拒收失败'))
@@ -780,6 +875,80 @@ export default function Prospecting({ token }: { token: string }) {
         </table>
       </div>
 
+      <h3 className="sub-head">跟进提醒（3 天待跟进 / 7 天超期）</h3>
+      <p className="muted">由 Worker 定时扫描生成；记录新的跟进后自动解除。</p>
+      <div className="prospect-toolbar">
+        <button
+          className="btn secondary"
+          onClick={() => refreshReminders()}
+          disabled={remindersLoading}
+        >
+          刷新
+        </button>
+        <span className="muted">{remindersLoading ? '加载中…' : `共 ${reminders.length} 条`}</span>
+      </div>
+      {remindersError && <div className="alert">{remindersError}</div>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>线索</th>
+              <th>类型</th>
+              <th>当前状态</th>
+              <th>提醒</th>
+              <th>生成时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {reminders.map((item) => (
+              <tr key={item.id}>
+                <td>{item.leadUuid.slice(0, 8)}</td>
+                <td>{LEAD_TYPE_LABEL[item.leadType]}</td>
+                <td>
+                  <span className={`status status-${item.leadStatus}`}>
+                    {STATUS_LABEL[item.leadStatus]}
+                  </span>
+                </td>
+                <td>
+                  <span
+                    className={`status ${
+                      item.level === 'overdue_7d' ? 'status-stale' : 'status-pending'
+                    }`}
+                  >
+                    {REMINDER_LEVEL_LABEL[item.level]}
+                  </span>
+                </td>
+                <td>{item.createdAt}</td>
+                <td>
+                  <button
+                    className="table-action"
+                    onClick={() => openDetail(item.leadUuid)}
+                    disabled={actionBusy}
+                  >
+                    详情
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {remindersLoading && (
+              <tr>
+                <td colSpan={6} className="empty">
+                  加载中…
+                </td>
+              </tr>
+            )}
+            {!remindersLoading && reminders.length === 0 && (
+              <tr>
+                <td colSpan={6} className="empty">
+                  暂无跟进提醒
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
       <h3 className="sub-head">线索列表</h3>
       <div className="prospect-toolbar">
         <select value={leadType} onChange={(e) => setLeadType(e.target.value as LeadType | '')}>
@@ -830,6 +999,7 @@ export default function Prospecting({ token }: { token: string }) {
                 <td>{lead.intentScore ?? '—'}</td>
                 <td>
                   <span className={`status status-${lead.status}`}>{STATUS_LABEL[lead.status]}</span>
+                  {lead.stale && <span className="status status-stale stale-tag">超期</span>}
                 </td>
                 <td>{formatBudget(lead.budgetCents)}</td>
                 <td>{lead.createdAt}</td>
@@ -879,6 +1049,7 @@ export default function Prospecting({ token }: { token: string }) {
             {INTENT_LABEL[detail.intentStatus]}
             {typeof detail.intentScore === 'number' ? ` · ${detail.intentScore} 分` : ''}
             {detail.platform ? ` · ${detail.platform}` : ''}
+            {detail.stale && <span className="status status-stale stale-tag">超期</span>}
           </p>
           {actionMsg && <p className="muted">{actionMsg}</p>}
           <div>
@@ -965,6 +1136,43 @@ export default function Prospecting({ token }: { token: string }) {
                   </button>
                 </div>
                 <p className="muted">仅已复核状态可发起；停机开关开启或命中拒收名单会被拦截。</p>
+              </form>
+            )}
+
+            {(detail.status === 'contacted' || detail.status === 'following_up') && (
+              <form className="action-box" onSubmit={sendFollowUp}>
+                <h4>记录后续跟进</h4>
+                <select
+                  value={followUpChannel}
+                  onChange={(e) => setFollowUpChannel(e.target.value as ContactChannel)}
+                >
+                  {CONTACT_CHANNELS.map((channel) => (
+                    <option key={channel} value={channel}>
+                      {CHANNEL_LABEL[channel]}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={followUpDirection}
+                  onChange={(e) => setFollowUpDirection(e.target.value as FollowUpDirection)}
+                >
+                  {DIRECTION_OPTIONS.map((direction) => (
+                    <option key={direction} value={direction}>
+                      {DIRECTION_LABEL[direction]}
+                    </option>
+                  ))}
+                </select>
+                <textarea
+                  value={followUpContent}
+                  onChange={(e) => setFollowUpContent(e.target.value)}
+                  placeholder="填写本次跟进内容，服务端加密存储"
+                />
+                <div className="action-row">
+                  <button className="btn primary" type="submit" disabled={actionBusy}>
+                    记录跟进
+                  </button>
+                </div>
+                <p className="muted">记录后线索进入跟进中，并解除超期标记与未处理提醒。</p>
               </form>
             )}
 

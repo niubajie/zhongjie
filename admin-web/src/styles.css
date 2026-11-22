@@ -472,6 +472,10 @@ th {
   color: #991b1b;
 }
 
+.stale-tag {
+  margin-left: 6px;
+}
+
 .logout {
   margin-left: auto;
   padding: 4px 8px;

@@ -394,6 +394,8 @@ export type TransitionStatus =
   | 'rejected'
   | 'ignored'
 export type ContactChannel = 'in_app' | 'sms' | 'wechat' | 'phone'
+export type FollowUpDirection = 'outbound' | 'inbound'
+export type ReminderLevel = 'due_3d' | 'overdue_7d'
 export type ReviewDecision = 'approve' | 'reject'
 
 export interface LeadSource {
@@ -438,6 +440,8 @@ export interface ProspectLead {
   intentStatus: ProspectIntentStatus
   status: ProspectStatus
   matchedPropertyId?: string
+  stale?: boolean
+  staleAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -445,10 +449,19 @@ export interface ProspectLead {
 export interface FollowUp {
   id: number
   channel: ContactChannel
-  direction: 'outbound' | 'inbound'
+  direction: FollowUpDirection
   status: 'pending' | 'sent' | 'failed' | 'received'
   content?: string
   sentAt?: string
+  createdAt: string
+}
+
+export interface ProspectReminder {
+  id: number
+  leadUuid: string
+  leadType: LeadType
+  leadStatus: ProspectStatus
+  level: ReminderLevel
   createdAt: string
 }
 
@@ -586,6 +599,34 @@ export async function contactProspect(
   return request<FollowUp>(
     `/v1/admin/prospects/${encodeURIComponent(uuid)}/contact`,
     { method: 'POST', body: JSON.stringify({ channel, content }) },
+    token,
+  )
+}
+
+export async function fetchProspectReminders(
+  token: string,
+  limit = 50,
+): Promise<ProspectReminder[]> {
+  const params = new URLSearchParams()
+  params.set('limit', String(limit))
+  const data = await request<{ items: ProspectReminder[] }>(
+    `/v1/admin/prospects/reminders?${params.toString()}`,
+    {},
+    token,
+  )
+  return data.items
+}
+
+export async function addProspectFollowUp(
+  token: string,
+  uuid: string,
+  channel: ContactChannel,
+  direction: FollowUpDirection,
+  content: string,
+): Promise<FollowUp> {
+  return request<FollowUp>(
+    `/v1/admin/prospects/${encodeURIComponent(uuid)}/follow-ups`,
+    { method: 'POST', body: JSON.stringify({ channel, direction, content }) },
     token,
   )
 }

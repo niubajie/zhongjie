@@ -298,6 +298,11 @@ func (s *Service) TransitionLead(ctx context.Context, adminID int64, uuid, targe
 	if err := s.repo.TransitionLeadStatus(ctx, uuid, lead.Status, target); err != nil {
 		return ProspectLeadVO{}, err
 	}
+	if target != StatusFollowingUp {
+		if err := s.repo.ResolveRemindersByLeadUUID(ctx, uuid); err != nil {
+			return ProspectLeadVO{}, err
+		}
+	}
 	s.repo.Audit(ctx, adminID, "prospect.lead.transition."+target, "prospect_lead", uuid)
 
 	updated, err := s.repo.GetLead(ctx, uuid)
@@ -323,6 +328,9 @@ func (s *Service) OptOutLead(ctx context.Context, adminID int64, uuid, reason st
 		}
 	}
 	if err := s.repo.TransitionLeadStatus(ctx, uuid, lead.Status, StatusOptOut); err != nil {
+		return ProspectLeadVO{}, err
+	}
+	if err := s.repo.ResolveRemindersByLeadUUID(ctx, uuid); err != nil {
 		return ProspectLeadVO{}, err
 	}
 	s.repo.Audit(ctx, adminID, "prospect.lead.optout", "prospect_lead", uuid)

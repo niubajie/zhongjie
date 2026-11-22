@@ -112,6 +112,33 @@ func (r *Repository) MarkLeadStale(ctx context.Context, leadID int64) error {
 	return nil
 }
 
+// ResolveRemindersByLeadUUID 线索离开跟进阶段后关闭其未处理提醒。
+func (r *Repository) ResolveRemindersByLeadUUID(ctx context.Context, uuid string) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE prospect_reminders SET status = 'resolved', resolved_at = now()
+		WHERE status = 'open'
+		  AND lead_id = (SELECT id FROM prospect_leads WHERE uuid = $1)
+	`, uuid)
+	if err != nil {
+		return fmt.Errorf("resolve reminders by lead: %w", err)
+	}
+	return nil
+}
+
+// ResolveOutOfScopeReminders 兜底清理：线索已删除或已不在 contacted/following_up 时关闭提醒。
+func (r *Repository) ResolveOutOfScopeReminders(ctx context.Context) error {
+	_, err := r.pool.Exec(ctx, `
+		UPDATE prospect_reminders r SET status = 'resolved', resolved_at = now()
+		FROM prospect_leads l
+		WHERE r.lead_id = l.id AND r.status = 'open'
+		  AND (l.deleted_at IS NOT NULL OR l.status NOT IN ('contacted', 'following_up'))
+	`)
+	if err != nil {
+		return fmt.Errorf("resolve out of scope reminders: %w", err)
+	}
+	return nil
+}
+
 // ListReminders 未处理提醒列表，按生成时间倒序。
 func (r *Repository) ListReminders(ctx context.Context, limit int) ([]Reminder, error) {
 	if limit <= 0 || limit > 200 {
@@ -196,6 +223,9 @@ func (s *Service) ListReminders(ctx context.Context, limit int) ([]ReminderVO, e
 // ScanFollowUpReminders 扫描一次跟进提醒：3 天生成待跟进提醒，7 天标记超期。
 // 幂等：重复扫描不会产生重复提醒，已标记超期的线索不会重复计数。
 func (s *Service) ScanFollowUpReminders(ctx context.Context, now time.Time) (ReminderStats, error) {
+	if err := s.repo.ResolveOutOfScopeReminders(ctx); err != nil {
+		return ReminderStats{}, err
+	}
 	candidates, err := s.repo.ListFollowUpCandidates(ctx)
 	if err != nil {
 		return ReminderStats{}, err
