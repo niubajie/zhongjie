@@ -26,6 +26,7 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.POST("/lead-sources", h.createSource)
 	r.PATCH("/lead-sources/:uuid/enabled", h.setSourceEnabled)
 	r.GET("/prospects", h.listLeads)
+	r.POST("/prospects/batch", h.batchAction)
 	r.GET("/prospects/review-queue", h.listReviewQueue)
 	r.GET("/prospects/opt-outs", h.listOptOuts)
 	r.GET("/prospects/reminders", h.listReminders)
@@ -571,4 +572,28 @@ func (h *Handler) exportSourceStatsCSV(c *gin.Context) {
 	}
 	c.Header("Content-Disposition", `attachment; filename="`+filename+`"`)
 	c.Data(http.StatusOK, "text/csv; charset=utf-8", data)
+}
+
+// ---- 批次 15：线索批量操作 ----
+
+func (h *Handler) batchAction(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	var in BatchActionInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	result, err := h.svc.BatchAction(c.Request.Context(), httpx.CurrentAdminID(c), in)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidBatchInput):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "批量操作失败")
+		}
+		return
+	}
+	httpx.OK(c, result)
 }

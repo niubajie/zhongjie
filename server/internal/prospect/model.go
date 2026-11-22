@@ -26,6 +26,7 @@ var (
 	ErrNotificationNotFound = errors.New("通知不存在")
 	ErrInvalidAuditQuery    = errors.New("审计日志查询参数不合法")
 	ErrInvalidStatsQuery    = errors.New("来源统计参数不合法")
+	ErrInvalidBatchInput    = errors.New("批量操作参数不合法")
 )
 
 // 线索类型
@@ -385,6 +386,35 @@ type TransitionLeadInput struct {
 // OptOutLeadInput 拒收录入，原因可选。
 type OptOutLeadInput struct {
 	Reason string `json:"reason,omitempty"`
+}
+
+// ---- 批次 15：线索批量操作 ----
+
+// MaxBatchLeads 单次批量操作允许的线索上限。
+const MaxBatchLeads = 100
+
+// BatchActionInput 批量操作请求；action 取 approve / reject / transition / opt_out。
+// 每条线索独立执行、独立审计，失败项不影响其他条目。
+type BatchActionInput struct {
+	Action string   `json:"action"`
+	Status string   `json:"status,omitempty"`
+	Reason string   `json:"reason,omitempty"`
+	UUIDs  []string `json:"uuids"`
+}
+
+// BatchItemResult 单条线索的执行结果。
+type BatchItemResult struct {
+	UUID    string `json:"uuid"`
+	OK      bool   `json:"ok"`
+	Message string `json:"message,omitempty"`
+}
+
+// BatchActionResult 批量执行汇总。
+type BatchActionResult struct {
+	Total     int               `json:"total"`
+	Succeeded int               `json:"succeeded"`
+	Failed    int               `json:"failed"`
+	Results   []BatchItemResult `json:"results"`
 }
 
 // OptOutVO 拒收记录视图；不返回 contact_hash，避免不可逆标识外泄。

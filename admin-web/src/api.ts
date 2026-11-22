@@ -752,6 +752,34 @@ export async function exportProspectSourceStatsCsv(
   }
 }
 
+export type ProspectBatchActionType = 'approve' | 'reject' | 'transition' | 'opt_out'
+
+export interface ProspectBatchItemResult {
+  uuid: string
+  ok: boolean
+  message?: string
+}
+
+export interface ProspectBatchActionResult {
+  total: number
+  succeeded: number
+  failed: number
+  results: ProspectBatchItemResult[]
+}
+
+export async function batchProspectLeads(
+  token: string,
+  action: ProspectBatchActionType,
+  uuids: string[],
+  options: { status?: string; reason?: string } = {},
+): Promise<ProspectBatchActionResult> {
+  return request<ProspectBatchActionResult>(
+    '/v1/admin/prospects/batch',
+    { method: 'POST', body: JSON.stringify({ action, uuids, ...options }) },
+    token,
+  )
+}
+
 export async function fetchProspectReminders(
   token: string,
   limit = 50,

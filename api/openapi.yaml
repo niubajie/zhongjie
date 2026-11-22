@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.16.0
+  version: 0.17.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
@@ -1459,6 +1459,27 @@ paths:
               schema: {type: string, format: binary}
         "400":
           description: 时间参数不合法
+  /v1/admin/prospects/batch:
+    post:
+      tags: [prospect]
+      summary: 线索批量操作（批次15，审批/拒绝/流转/拒收，逐条执行并逐条审计）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProspectBatchActionRequest"
+      responses:
+        "200":
+          description: 批量执行结果；部分成功也返回 200，逐条看 results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectBatchActionEnvelope"
+        "400":
+          description: 参数不合法（空列表、超过 100 条、未知 action）
   /v1/admin/prospects/{uuid}/status:
     post:
       tags: [prospect]
@@ -2511,6 +2532,46 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/ProspectSourceStatListData"
+    ProspectBatchActionRequest:
+      type: object
+      required: [action, uuids]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject, transition, opt_out]
+        uuids:
+          type: array
+          maxItems: 100
+          items: {type: string, format: uuid}
+        status:
+          type: string
+          description: action 为 transition 时的目标状态
+        reason:
+          type: string
+          description: action 为 opt_out 时的拒收原因
+    ProspectBatchItemResult:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        ok: {type: boolean}
+        message: {type: string, description: 失败原因}
+    ProspectBatchActionResult:
+      type: object
+      properties:
+        total: {type: integer}
+        succeeded: {type: integer}
+        failed: {type: integer}
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectBatchItemResult"
+    ProspectBatchActionEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectBatchActionResult"
     ProspectLead:
       type: object
       description: 对外线索视图，不含原文密文与联系方式明文

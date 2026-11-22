@@ -212,6 +212,63 @@ func (s *Service) ListCollectRuns(ctx context.Context, sourceUUID string, limit 
 	return out, nil
 }
 
+// ---- 批次 15：线索批量操作 ----
+
+// BatchAction 逐条执行批量操作；单条失败不影响其他条目，且沿用各专用方法逐条写审计。
+func (s *Service) BatchAction(ctx context.Context, adminID int64, in BatchActionInput) (BatchActionResult, error) {
+	if len(in.UUIDs) == 0 {
+		return BatchActionResult{}, fmt.Errorf("%w: 请至少选择一条线索", ErrInvalidBatchInput)
+	}
+	if len(in.UUIDs) > MaxBatchLeads {
+		return BatchActionResult{}, fmt.Errorf("%w: 单次最多 %d 条", ErrInvalidBatchInput, MaxBatchLeads)
+	}
+	switch in.Action {
+	case "approve", "reject", "opt_out":
+	case "transition":
+		if strings.TrimSpace(in.Status) == "" {
+			return BatchActionResult{}, fmt.Errorf("%w: 批量流转需指定目标状态", ErrInvalidBatchInput)
+		}
+	default:
+		return BatchActionResult{}, fmt.Errorf("%w: 未知操作 %q", ErrInvalidBatchInput, in.Action)
+	}
+
+	seen := make(map[string]bool, len(in.UUIDs))
+	out := BatchActionResult{Results: make([]BatchItemResult, 0, len(in.UUIDs))}
+	for _, raw := range in.UUIDs {
+		uuid := strings.TrimSpace(raw)
+		if uuid == "" || seen[uuid] {
+			continue
+		}
+		seen[uuid] = true
+
+		var err error
+		switch in.Action {
+		case "approve":
+			_, err = s.ReviewLead(ctx, adminID, uuid, "approve")
+		case "reject":
+			_, err = s.ReviewLead(ctx, adminID, uuid, "reject")
+		case "transition":
+			_, err = s.TransitionLead(ctx, adminID, uuid, in.Status)
+		case "opt_out":
+			_, err = s.OptOutLead(ctx, adminID, uuid, in.Reason)
+		}
+
+		item := BatchItemResult{UUID: uuid, OK: err == nil}
+		if err != nil {
+			item.Message = err.Error()
+			out.Failed++
+		} else {
+			out.Succeeded++
+		}
+		out.Results = append(out.Results, item)
+	}
+	if len(out.Results) == 0 {
+		return BatchActionResult{}, fmt.Errorf("%w: 请至少选择一条线索", ErrInvalidBatchInput)
+	}
+	out.Total = len(out.Results)
+	return out, nil
+}
+
 // ---- 批次 5：人工复核 + 首条联系 ----
 
 // ListReviewQueue 返回待复核队列（已评分达标的 status=new 线索）。

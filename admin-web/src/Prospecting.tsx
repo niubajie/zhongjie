@@ -12,6 +12,7 @@ import {
   fetchProspectDetail,
   fetchProspectNotifications,
   fetchProspectReminders,
+  batchProspectLeads,
   fetchProspects,
   fetchProspectSourceStats,
   fetchProspectStats,
@@ -34,6 +35,8 @@ import {
   type LeadType,
   type OptOut,
   type ProspectAuditLog,
+  type ProspectBatchActionType,
+  type ProspectBatchItemResult,
   type ProspectContactChannel,
   type ProspectCollectRun,
   type ProspectIntentStatus,
@@ -233,6 +236,16 @@ function transitionsFor(status: ProspectStatus): TransitionStatus[] {
   return TRANSITIONS[status] ?? []
 }
 
+const BATCH_TRANSITION_TARGETS: TransitionStatus[] = [
+  'following_up',
+  'converted',
+  'published',
+  'cold',
+  'lost',
+  'rejected',
+  'ignored',
+]
+
 function formatBudget(cents?: number): string {
   if (!cents || cents <= 0) {
     return '—'
@@ -293,6 +306,12 @@ export default function Prospecting({ token }: { token: string }) {
   const [leads, setLeads] = useState<ProspectLead[]>([])
   const [leadsLoading, setLeadsLoading] = useState(true)
   const [leadsError, setLeadsError] = useState('')
+  const [selectedLeadUuids, setSelectedLeadUuids] = useState<string[]>([])
+  const [batchStatus, setBatchStatus] = useState<TransitionStatus>('following_up')
+  const [batchReason, setBatchReason] = useState('')
+  const [batchBusy, setBatchBusy] = useState(false)
+  const [batchMsg, setBatchMsg] = useState('')
+  const [batchResults, setBatchResults] = useState<ProspectBatchItemResult[]>([])
 
   const [detail, setDetail] = useState<ProspectLeadDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -661,8 +680,51 @@ export default function Prospecting({ token }: { token: string }) {
       .then((items) => {
         setLeads(items)
         setLeadsError('')
+        setSelectedLeadUuids((prev) =>
+          prev.filter((uuid) => items.some((item) => item.uuid === uuid)),
+        )
       })
       .catch((err: Error) => setLeadsError(err.message || '线索列表加载失败'))
+  }
+
+  function toggleLeadSelection(uuid: string) {
+    setSelectedLeadUuids((prev) =>
+      prev.includes(uuid) ? prev.filter((item) => item !== uuid) : [...prev, uuid],
+    )
+  }
+
+  function toggleSelectAllLeads() {
+    setSelectedLeadUuids((prev) =>
+      prev.length === leads.length ? [] : leads.map((lead) => lead.uuid),
+    )
+  }
+
+  async function runBatchAction(action: ProspectBatchActionType) {
+    if (selectedLeadUuids.length === 0) {
+      setBatchMsg('请先选择线索')
+      return
+    }
+    if (action === 'opt_out' && !batchReason.trim()) {
+      setBatchMsg('批量拒收需填写原因')
+      return
+    }
+    setBatchBusy(true)
+    setBatchMsg('')
+    setBatchResults([])
+    try {
+      const result = await batchProspectLeads(token, action, selectedLeadUuids, {
+        status: action === 'transition' ? batchStatus : undefined,
+        reason: action === 'opt_out' ? batchReason.trim() : undefined,
+      })
+      setBatchResults(result.results)
+      setBatchMsg(`批量操作完成：成功 ${result.succeeded} 条，失败 ${result.failed} 条`)
+      setSelectedLeadUuids([])
+      await Promise.all([refreshLeads(), refreshQueue(), refreshStats(), refreshOptOuts()])
+    } catch (err) {
+      setBatchMsg((err as Error).message || '批量操作失败')
+    } finally {
+      setBatchBusy(false)
+    }
   }
 
   function refreshOptOuts() {
@@ -1678,11 +1740,76 @@ export default function Prospecting({ token }: { token: string }) {
         </button>
         <span className="muted">{leadsLoading ? '加载中…' : `共 ${leads.length} 条`}</span>
       </div>
+      <div className="prospect-toolbar">
+        <span className="muted">已选 {selectedLeadUuids.length} 条</span>
+        <button
+          className="btn secondary"
+          onClick={() => runBatchAction('approve')}
+          disabled={batchBusy}
+        >
+          批量通过
+        </button>
+        <button
+          className="btn secondary"
+          onClick={() => runBatchAction('reject')}
+          disabled={batchBusy}
+        >
+          批量拒绝
+        </button>
+        <select
+          value={batchStatus}
+          onChange={(e) => setBatchStatus(e.target.value as TransitionStatus)}
+        >
+          {BATCH_TRANSITION_TARGETS.map((status) => (
+            <option key={status} value={status}>
+              流转为{STATUS_LABEL[status]}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn secondary"
+          onClick={() => runBatchAction('transition')}
+          disabled={batchBusy}
+        >
+          批量流转
+        </button>
+        <input
+          placeholder="拒收原因（批量拒收必填）"
+          value={batchReason}
+          onChange={(e) => setBatchReason(e.target.value)}
+        />
+        <button
+          className="btn secondary"
+          onClick={() => runBatchAction('opt_out')}
+          disabled={batchBusy}
+        >
+          批量拒收
+        </button>
+      </div>
+      {batchMsg && <p className="muted">{batchMsg}</p>}
+      {batchResults.some((item) => !item.ok) && (
+        <ul className="alert batch-failures">
+          {batchResults
+            .filter((item) => !item.ok)
+            .map((item) => (
+              <li key={item.uuid}>
+                {item.uuid}：{item.message}
+              </li>
+            ))}
+        </ul>
+      )}
       {leadsError && <div className="alert">{leadsError}</div>}
       <div className="table-wrap">
         <table>
           <thead>
             <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  checked={leads.length > 0 && selectedLeadUuids.length === leads.length}
+                  onChange={toggleSelectAllLeads}
+                />
+              </th>
               <th>来源</th>
               <th>类型</th>
               <th>意向</th>
@@ -1696,6 +1823,13 @@ export default function Prospecting({ token }: { token: string }) {
           <tbody>
             {leads.map((lead) => (
               <tr key={lead.uuid}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedLeadUuids.includes(lead.uuid)}
+                    onChange={() => toggleLeadSelection(lead.uuid)}
+                  />
+                </td>
                 <td>{lead.sourceName}</td>
                 <td>{LEAD_TYPE_LABEL[lead.leadType]}</td>
                 <td>{INTENT_LABEL[lead.intentStatus]}</td>
@@ -1719,14 +1853,14 @@ export default function Prospecting({ token }: { token: string }) {
             ))}
             {leadsLoading && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={9} className="empty">
                   加载中…
                 </td>
               </tr>
             )}
             {!leadsLoading && leads.length === 0 && (
               <tr>
-                <td colSpan={8} className="empty">
+                <td colSpan={9} className="empty">
                   暂无线索
                 </td>
               </tr>
