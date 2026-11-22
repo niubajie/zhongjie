@@ -1,6 +1,9 @@
 package prospect
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 // 自主获客模块（方案 3.12 / 3.13，M10）。
 // 本包只放数据模型与基础读写；采集 Worker、LLM 评分、人工复核联系、
@@ -19,6 +22,7 @@ var (
 	ErrHalted             = errors.New("全局停机开关已开启，暂停联系")
 	ErrInvalidReview      = errors.New("无效的复核结论")
 	ErrInvalidContact     = errors.New("联系参数不合法")
+	ErrInvalidFollowUp    = errors.New("跟进参数不合法")
 )
 
 // 线索类型
@@ -220,6 +224,7 @@ type ProspectLead struct {
 	Status            string
 	MatchedUserID     int64
 	MatchedPropertyID string
+	StaleAt           string
 	CreatedAt         string
 	UpdatedAt         string
 }
@@ -286,6 +291,8 @@ type ProspectLeadVO struct {
 	IntentStatus      string  `json:"intentStatus"`
 	Status            string  `json:"status"`
 	MatchedPropertyID string  `json:"matchedPropertyId,omitempty"`
+	Stale             bool    `json:"stale"`
+	StaleAt           string  `json:"staleAt,omitempty"`
 	CreatedAt         string  `json:"createdAt"`
 	UpdatedAt         string  `json:"updatedAt"`
 }
@@ -369,4 +376,62 @@ type OptOutVO struct {
 	LeadType   string `json:"leadType"`
 	Reason     string `json:"reason,omitempty"`
 	OptedOutAt string `json:"optedOutAt"`
+}
+
+// ---- 批次 8：后续跟进与提醒 ----
+
+// 跟进提醒阈值：3 天未跟进生成待跟进提醒，7 天未跟进标记超期。
+const (
+	FollowUpDueAfter     = 3 * 24 * time.Hour
+	FollowUpOverdueAfter = 7 * 24 * time.Hour
+)
+
+// 提醒级别。
+const (
+	ReminderLevelDue3d     = "due_3d"
+	ReminderLevelOverdue7d = "overdue_7d"
+)
+
+// AddFollowUpInput 后续跟进记录，内容由人工填写。
+type AddFollowUpInput struct {
+	Channel   string `json:"channel"`
+	Direction string `json:"direction,omitempty"`
+	Content   string `json:"content"`
+}
+
+// FollowUpCandidate Worker 扫描对象：最后活动时间与当前超期标记。
+type FollowUpCandidate struct {
+	ID           int64
+	UUID         string
+	Status       string
+	LastActivity time.Time
+	Stale        bool
+}
+
+// Reminder 未处理的跟进提醒。
+type Reminder struct {
+	ID         int64
+	LeadUUID   string
+	LeadType   string
+	LeadStatus string
+	Level      string
+	CreatedAt  string
+}
+
+// ReminderVO 提醒视图，不返回联系方式等敏感字段。
+type ReminderVO struct {
+	ID         int64  `json:"id"`
+	LeadUUID   string `json:"leadUuid"`
+	LeadType   string `json:"leadType"`
+	LeadStatus string `json:"leadStatus"`
+	Level      string `json:"level"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+// ReminderStats Worker 单轮扫描统计。
+type ReminderStats struct {
+	Scanned int `json:"scanned"`
+	Due     int `json:"due"`
+	Overdue int `json:"overdue"`
+	Stale   int `json:"stale"`
 }

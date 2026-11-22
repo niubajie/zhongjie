@@ -28,11 +28,13 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.GET("/prospects", h.listLeads)
 	r.GET("/prospects/review-queue", h.listReviewQueue)
 	r.GET("/prospects/opt-outs", h.listOptOuts)
+	r.GET("/prospects/reminders", h.listReminders)
 	r.GET("/prospects/kill-switch", h.getKillSwitch)
 	r.PUT("/prospects/kill-switch", h.setKillSwitch)
 	r.GET("/prospects/:uuid", h.getLead)
 	r.POST("/prospects/:uuid/review", h.reviewLead)
 	r.POST("/prospects/:uuid/contact", h.contactLead)
+	r.POST("/prospects/:uuid/follow-ups", h.addFollowUp)
 	r.POST("/prospects/:uuid/status", h.transitionLead)
 	r.POST("/prospects/:uuid/opt-out", h.optOutLead)
 	r.PATCH("/lead-sources/:uuid", h.updateSource)
@@ -283,6 +285,50 @@ func (h *Handler) listOptOuts(c *gin.Context) {
 			return
 		}
 		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载拒收名单失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+// ---- 批次 8：后续跟进与提醒 ----
+
+func (h *Handler) addFollowUp(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	var in AddFollowUpInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	result, err := h.svc.AddFollowUp(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid"), in)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrLeadNotFound):
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
+		case errors.Is(err, ErrInvalidFollowUp), errors.Is(err, ErrInvalidTransition):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "记录跟进失败")
+		}
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *Handler) listReminders(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	items, err := h.svc.ListReminders(c.Request.Context(), limit)
+	if err != nil {
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载跟进提醒失败")
 		return
 	}
 	httpx.OK(c, gin.H{"items": items})

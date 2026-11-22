@@ -141,6 +141,7 @@ func (r *Repository) GetLead(ctx context.Context, uuid string) (ProspectLead, er
 		       COALESCE(l.area_sqm, 0), COALESCE(l.layout, ''), COALESCE(l.intent_score, 0),
 		       l.intent_status, l.status, COALESCE(l.matched_user_id, 0),
 		       COALESCE(l.matched_property_id::text, ''),
+		       COALESCE(`+fmt.Sprintf(tsFmt, "l.stale_at")+`, ''),
 		       `+fmt.Sprintf(tsFmt, "l.created_at")+`, `+fmt.Sprintf(tsFmt, "l.updated_at")+`
 		FROM prospect_leads l
 		LEFT JOIN lead_sources s ON s.id = l.source_id
@@ -149,7 +150,7 @@ func (r *Repository) GetLead(ctx context.Context, uuid string) (ProspectLead, er
 		&l.ExternalPostID, &l.RawTextEnc, &l.ContactHash, &l.ContactChannel, &l.CityCode,
 		&l.DistrictCode, &l.BudgetCents, &l.AreaSqm, &l.Layout, &l.IntentScore,
 		&l.IntentStatus, &l.Status, &l.MatchedUserID, &l.MatchedPropertyID,
-		&l.CreatedAt, &l.UpdatedAt)
+		&l.StaleAt, &l.CreatedAt, &l.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProspectLead{}, ErrLeadNotFound
 	}
@@ -170,6 +171,7 @@ func (r *Repository) ListLeads(ctx context.Context, leadType, status string, lim
 		       COALESCE(l.area_sqm, 0), COALESCE(l.layout, ''), COALESCE(l.intent_score, 0),
 		       l.intent_status, l.status, COALESCE(l.matched_user_id, 0),
 		       COALESCE(l.matched_property_id::text, ''),
+		       COALESCE(`+fmt.Sprintf(tsFmt, "l.stale_at")+`, ''),
 		       `+fmt.Sprintf(tsFmt, "l.created_at")+`, `+fmt.Sprintf(tsFmt, "l.updated_at")+`
 		FROM prospect_leads l
 		LEFT JOIN lead_sources s ON s.id = l.source_id
@@ -189,7 +191,7 @@ func (r *Repository) ListLeads(ctx context.Context, leadType, status string, lim
 		if err := rows.Scan(&l.ID, &l.UUID, &l.SourceID, &l.SourceName, &l.LeadType, &l.Platform,
 			&l.ExternalPostID, &l.ContactChannel, &l.CityCode, &l.DistrictCode, &l.BudgetCents,
 			&l.AreaSqm, &l.Layout, &l.IntentScore, &l.IntentStatus, &l.Status, &l.MatchedUserID,
-			&l.MatchedPropertyID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+			&l.MatchedPropertyID, &l.StaleAt, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -531,6 +533,7 @@ func (r *Repository) ListReviewQueue(ctx context.Context, leadType string, minSc
 		       COALESCE(l.area_sqm, 0), COALESCE(l.layout, ''), COALESCE(l.intent_score, 0),
 		       l.intent_status, l.status, COALESCE(l.matched_user_id, 0),
 		       COALESCE(l.matched_property_id::text, ''),
+		       COALESCE(`+fmt.Sprintf(tsFmt, "l.stale_at")+`, ''),
 		       `+fmt.Sprintf(tsFmt, "l.created_at")+`, `+fmt.Sprintf(tsFmt, "l.updated_at")+`
 		FROM prospect_leads l
 		LEFT JOIN lead_sources s ON s.id = l.source_id
@@ -552,7 +555,7 @@ func (r *Repository) ListReviewQueue(ctx context.Context, leadType string, minSc
 		if err := rows.Scan(&l.ID, &l.UUID, &l.SourceID, &l.SourceName, &l.LeadType, &l.Platform,
 			&l.ExternalPostID, &l.ContactChannel, &l.CityCode, &l.DistrictCode, &l.BudgetCents,
 			&l.AreaSqm, &l.Layout, &l.IntentScore, &l.IntentStatus, &l.Status, &l.MatchedUserID,
-			&l.MatchedPropertyID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+			&l.MatchedPropertyID, &l.StaleAt, &l.CreatedAt, &l.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, l)

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.10.0
+  version: 0.11.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
@@ -1260,6 +1260,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FollowUpEnvelope"
+  /v1/admin/prospects/{uuid}/follow-ups:
+    post:
+      tags: [prospect]
+      summary: 记录后续跟进（批次8，仅 contacted/following_up 可用，内容加密并写审计）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddFollowUpInput"
+      responses:
+        "200":
+          description: 新增的跟进记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowUpEnvelope"
+  /v1/admin/prospects/reminders:
+    get:
+      tags: [prospect]
+      summary: 跟进提醒列表（批次8，3 天待跟进 / 7 天超期未更新）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 未处理提醒列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderListEnvelope"
   /v1/admin/prospects/{uuid}/status:
     post:
       tags: [prospect]
@@ -2216,6 +2257,10 @@ components:
           type: string
           enum: [new, reviewed, contacted, following_up, converted, published, cold, lost, opt_out, rejected, ignored]
         matchedPropertyId: {type: string, format: uuid}
+        stale:
+          type: boolean
+          description: 是否已超期（7 天未跟进），true 时状态仍为 following_up
+        staleAt: {type: string}
         createdAt: {type: string}
         updatedAt: {type: string}
     ProspectLeadListData:
@@ -2300,6 +2345,44 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/FollowUp"
+    AddFollowUpInput:
+      type: object
+      required: [channel, content]
+      properties:
+        channel: {type: string, enum: [in_app, sms, wechat, phone]}
+        direction:
+          type: string
+          enum: [outbound, inbound]
+          description: 不传默认 outbound；outbound 记为 sent，inbound 记为 received
+        content:
+          type: string
+          minLength: 1
+          description: 跟进内容，人工填写，服务端加密存储
+    Reminder:
+      type: object
+      properties:
+        id: {type: integer}
+        leadUuid: {type: string, format: uuid}
+        leadType: {type: string, enum: [tenant, landlord]}
+        leadStatus:
+          type: string
+          enum: [new, reviewed, contacted, following_up, converted, published, cold, lost, opt_out, rejected, ignored]
+        level: {type: string, enum: [due_3d, overdue_7d]}
+        createdAt: {type: string}
+    ReminderListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reminder"
+    ReminderListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ReminderListData"
     TransitionLeadInput:
       type: object
       required: [status]

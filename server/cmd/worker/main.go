@@ -43,6 +43,7 @@ func main() {
 	notifySvc := notify.NewService(notifyRepo, pii, wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret),
 		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage, cfg.NotifyFields)
 	prospectRepo := prospect.NewRepository(pool)
+	prospectSvc := prospect.NewService(prospectRepo, pii)
 	ingestor := prospect.NewDefaultIngestor(prospectRepo, pii, log.Printf)
 
 	// 批次 4：LLM 意向评分。仅在配置了 LLM 时启用，失败不影响采集主流程。
@@ -99,14 +100,29 @@ func main() {
 		}
 	}
 
+	runFollowUpReminders := func() {
+		stats, err := prospectSvc.ScanFollowUpReminders(context.Background(), time.Now())
+		if err != nil {
+			log.Printf("prospect follow-up reminder run failed: %v", err)
+			return
+		}
+		if stats.Due+stats.Overdue+stats.Stale > 0 {
+			log.Printf("prospect follow-up reminders: scanned=%d due=%d overdue=%d stale=%d",
+				stats.Scanned, stats.Due, stats.Overdue, stats.Stale)
+		}
+	}
+
 	runFreshness()
 	runNotify()
+	runFollowUpReminders()
 	freshTicker := time.NewTicker(6 * time.Hour)
 	notifyTicker := time.NewTicker(30 * time.Second)
 	prospectTicker := time.NewTicker(10 * time.Minute)
+	followUpTicker := time.NewTicker(30 * time.Minute)
 	defer freshTicker.Stop()
 	defer notifyTicker.Stop()
 	defer prospectTicker.Stop()
+	defer followUpTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -118,6 +134,8 @@ func main() {
 			runNotify()
 		case <-prospectTicker.C:
 			runProspect()
+		case <-followUpTicker.C:
+			runFollowUpReminders()
 		}
 	}
 }

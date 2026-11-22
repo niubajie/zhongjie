@@ -428,6 +428,8 @@ func toLeadVO(l ProspectLead) ProspectLeadVO {
 		IntentStatus:      l.IntentStatus,
 		Status:            l.Status,
 		MatchedPropertyID: l.MatchedPropertyID,
+		Stale:             l.StaleAt != "",
+		StaleAt:           l.StaleAt,
 		CreatedAt:         l.CreatedAt,
 		UpdatedAt:         l.UpdatedAt,
 	}
