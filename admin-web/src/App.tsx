@@ -34,6 +34,7 @@ import {
   type AdminStats,
   type CommunitySuggestion,
 } from './api'
+import Prospecting from './Prospecting'
 
 type Session = Pick<AdminLoginResult, 'token' | 'admin'>
 
@@ -419,6 +420,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
             控制台
           </a>
           <a href="#properties">房源</a>
+          <a href="#prospecting">自主获客</a>
           <a href="#audit">审计</a>
         </nav>
         <div className="sidebar-foot">
@@ -763,6 +765,8 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
             </table>
           </div>
         </section>
+
+        <Prospecting token={session.token} />
 
         <section className="panel" id="imports">
           <h2>导入任务</h2>

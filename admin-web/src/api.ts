@@ -360,3 +360,272 @@ export async function fetchAdminProperties(token: string, limit = 20): Promise<A
   )
   return data.items
 }
+
+// ---- 自主获客（v1.5，批次 7 管理站接入）----
+
+export type LeadSourceKind = 'self_owned' | 'public_api' | 'third_party_scrape'
+export type LeadType = 'tenant' | 'landlord'
+export type ProspectContactChannel = 'phone' | 'wechat' | 'in_app' | 'sms' | 'unknown'
+export type ProspectIntentStatus =
+  | 'seeking'
+  | 'rented'
+  | 'landlord_listing'
+  | 'agent'
+  | 'irrelevant'
+  | 'unknown'
+export type ProspectStatus =
+  | 'new'
+  | 'reviewed'
+  | 'contacted'
+  | 'following_up'
+  | 'converted'
+  | 'published'
+  | 'cold'
+  | 'lost'
+  | 'opt_out'
+  | 'rejected'
+  | 'ignored'
+export type TransitionStatus =
+  | 'following_up'
+  | 'converted'
+  | 'published'
+  | 'cold'
+  | 'lost'
+  | 'rejected'
+  | 'ignored'
+export type ContactChannel = 'in_app' | 'sms' | 'wechat' | 'phone'
+export type ReviewDecision = 'approve' | 'reject'
+
+export interface LeadSource {
+  uuid: string
+  name: string
+  kind: LeadSourceKind
+  baseUrl?: string
+  robotsOk: boolean
+  termsOk: boolean
+  rateLimitMs: number
+  enabled: boolean
+  reviewNote?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CreateLeadSourceInput {
+  name: string
+  kind: LeadSourceKind
+  baseUrl?: string
+  rateLimitMs?: number
+  reviewNote?: string
+}
+
+export interface UpdateLeadSourceInput extends CreateLeadSourceInput {
+  robotsOk: boolean
+  termsOk: boolean
+}
+
+export interface ProspectLead {
+  uuid: string
+  sourceName: string
+  leadType: LeadType
+  platform: string
+  contactChannel: ProspectContactChannel
+  cityCode?: string
+  districtCode?: string
+  budgetCents?: number
+  areaSqm?: number
+  layout?: string
+  intentScore?: number
+  intentStatus: ProspectIntentStatus
+  status: ProspectStatus
+  matchedPropertyId?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface FollowUp {
+  id: number
+  channel: ContactChannel
+  direction: 'outbound' | 'inbound'
+  status: 'pending' | 'sent' | 'failed' | 'received'
+  content?: string
+  sentAt?: string
+  createdAt: string
+}
+
+export interface ProspectLeadDetail extends ProspectLead {
+  rawText: string
+  followUps: FollowUp[]
+}
+
+export interface OptOut {
+  id: number
+  leadType: LeadType
+  reason?: string
+  optedOutAt: string
+}
+
+export interface KillSwitchState {
+  halted: boolean
+}
+
+export async function fetchKillSwitch(token: string): Promise<KillSwitchState> {
+  return request<KillSwitchState>('/v1/admin/prospects/kill-switch', {}, token)
+}
+
+export async function setKillSwitch(token: string, halted: boolean): Promise<KillSwitchState> {
+  return request<KillSwitchState>(
+    '/v1/admin/prospects/kill-switch',
+    { method: 'PUT', body: JSON.stringify({ halted }) },
+    token,
+  )
+}
+
+export async function fetchLeadSources(token: string): Promise<LeadSource[]> {
+  const data = await request<{ items: LeadSource[] }>('/v1/admin/lead-sources', {}, token)
+  return data.items
+}
+
+export async function createLeadSource(
+  token: string,
+  input: CreateLeadSourceInput,
+): Promise<LeadSource> {
+  return request<LeadSource>(
+    '/v1/admin/lead-sources',
+    { method: 'POST', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function updateLeadSource(
+  token: string,
+  uuid: string,
+  input: UpdateLeadSourceInput,
+): Promise<void> {
+  await request<{ updated: boolean }>(
+    `/v1/admin/lead-sources/${encodeURIComponent(uuid)}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+    token,
+  )
+}
+
+export async function deleteLeadSource(token: string, uuid: string): Promise<void> {
+  await request<{ deleted: boolean }>(
+    `/v1/admin/lead-sources/${encodeURIComponent(uuid)}`,
+    { method: 'DELETE' },
+    token,
+  )
+}
+
+export async function setLeadSourceEnabled(
+  token: string,
+  uuid: string,
+  enabled: boolean,
+): Promise<boolean> {
+  const data = await request<{ enabled: boolean }>(
+    `/v1/admin/lead-sources/${encodeURIComponent(uuid)}/enabled`,
+    { method: 'PATCH', body: JSON.stringify({ enabled }) },
+    token,
+  )
+  return data.enabled
+}
+
+export async function fetchProspects(
+  token: string,
+  filters: { leadType?: LeadType | ''; status?: ProspectStatus | ''; limit?: number } = {},
+): Promise<ProspectLead[]> {
+  const params = new URLSearchParams()
+  if (filters.leadType) params.set('leadType', filters.leadType)
+  if (filters.status) params.set('status', filters.status)
+  params.set('limit', String(filters.limit ?? 50))
+  const data = await request<{ items: ProspectLead[] }>(
+    `/v1/admin/prospects?${params.toString()}`,
+    {},
+    token,
+  )
+  return data.items
+}
+
+export async function fetchReviewQueue(
+  token: string,
+  leadType: LeadType | '' = '',
+  limit = 50,
+): Promise<ProspectLead[]> {
+  const params = new URLSearchParams()
+  if (leadType) params.set('leadType', leadType)
+  params.set('limit', String(limit))
+  const data = await request<{ items: ProspectLead[] }>(
+    `/v1/admin/prospects/review-queue?${params.toString()}`,
+    {},
+    token,
+  )
+  return data.items
+}
+
+export async function fetchProspectDetail(token: string, uuid: string): Promise<ProspectLeadDetail> {
+  return request<ProspectLeadDetail>(`/v1/admin/prospects/${encodeURIComponent(uuid)}`, {}, token)
+}
+
+export async function reviewProspect(
+  token: string,
+  uuid: string,
+  decision: ReviewDecision,
+): Promise<ProspectLead> {
+  return request<ProspectLead>(
+    `/v1/admin/prospects/${encodeURIComponent(uuid)}/review`,
+    { method: 'POST', body: JSON.stringify({ decision }) },
+    token,
+  )
+}
+
+export async function contactProspect(
+  token: string,
+  uuid: string,
+  channel: ContactChannel,
+  content: string,
+): Promise<FollowUp> {
+  return request<FollowUp>(
+    `/v1/admin/prospects/${encodeURIComponent(uuid)}/contact`,
+    { method: 'POST', body: JSON.stringify({ channel, content }) },
+    token,
+  )
+}
+
+export async function transitionProspect(
+  token: string,
+  uuid: string,
+  status: TransitionStatus,
+): Promise<ProspectLead> {
+  return request<ProspectLead>(
+    `/v1/admin/prospects/${encodeURIComponent(uuid)}/status`,
+    { method: 'POST', body: JSON.stringify({ status }) },
+    token,
+  )
+}
+
+export async function optOutProspect(
+  token: string,
+  uuid: string,
+  reason: string,
+): Promise<ProspectLead> {
+  return request<ProspectLead>(
+    `/v1/admin/prospects/${encodeURIComponent(uuid)}/opt-out`,
+    { method: 'POST', body: JSON.stringify({ reason }) },
+    token,
+  )
+}
+
+export async function fetchOptOuts(
+  token: string,
+  leadType: LeadType | '' = '',
+  limit = 50,
+): Promise<OptOut[]> {
+  const params = new URLSearchParams()
+  if (leadType) params.set('leadType', leadType)
+  params.set('limit', String(limit))
+  const data = await request<{ items: OptOut[] }>(
+    `/v1/admin/prospects/opt-outs?${params.toString()}`,
+    {},
+    token,
+  )
+  return data.items
+}
