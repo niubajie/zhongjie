@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.9.0
+  version: 0.10.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
@@ -1260,6 +1260,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FollowUpEnvelope"
+  /v1/admin/prospects/{uuid}/status:
+    post:
+      tags: [prospect]
+      summary: 手动流转线索状态（批次6，opt_out/contacted/reviewed 走专用接口）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransitionLeadInput"
+      responses:
+        "200":
+          description: 流转后的线索
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadEnvelope"
+  /v1/admin/prospects/{uuid}/opt-out:
+    post:
+      tags: [prospect]
+      summary: 人工拒收（批次6，写入全局拒收名单并置为 opt_out）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptOutLeadInput"
+      responses:
+        "200":
+          description: 拒收后的线索
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadEnvelope"
+  /v1/admin/prospects/opt-outs:
+    get:
+      tags: [prospect]
+      summary: 拒收名单列表（批次6，不返回联系方式哈希）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: leadType
+          in: query
+          schema: {type: string, enum: [tenant, landlord]}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 拒收记录列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptOutListEnvelope"
   /v1/admin/prospects/kill-switch:
     get:
       tags: [prospect]
@@ -2232,3 +2300,36 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/FollowUp"
+    TransitionLeadInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [following_up, converted, published, cold, lost, rejected, ignored]
+          description: reviewed/contacted/opt_out 必须使用复核、联系、拒收专用接口
+    OptOutLeadInput:
+      type: object
+      properties:
+        reason: {type: string}
+    OptOut:
+      type: object
+      properties:
+        id: {type: integer}
+        leadType: {type: string, enum: [tenant, landlord]}
+        reason: {type: string}
+        optedOutAt: {type: string}
+    OptOutListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptOut"
+    OptOutListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/OptOutListData"

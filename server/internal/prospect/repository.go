@@ -236,6 +236,33 @@ func (r *Repository) CreateOptOut(ctx context.Context, contactHash []byte, leadT
 	return nil
 }
 
+// ListOptOuts 拒收名单（批次 6），不返回 contact_hash。
+func (r *Repository) ListOptOuts(ctx context.Context, leadType string, limit int) ([]OptOut, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, lead_type, COALESCE(reason, ''), `+fmt.Sprintf(tsFmt, "opted_out_at")+`
+		FROM opt_outs
+		WHERE ($1 = '' OR lead_type = $1)
+		ORDER BY opted_out_at DESC
+		LIMIT $2
+	`, leadType, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list opt outs: %w", err)
+	}
+	defer rows.Close()
+	out := []OptOut{}
+	for rows.Next() {
+		var o OptOut
+		if err := rows.Scan(&o.ID, &o.LeadType, &o.Reason, &o.OptedOutAt); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
 // ---- 跟进 ----
 
 func (r *Repository) CreateFollowUp(ctx context.Context, leadID int64, channel, direction string, contentEnc []byte, auditID int64) (int64, error) {

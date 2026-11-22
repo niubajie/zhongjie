@@ -27,11 +27,14 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.PATCH("/lead-sources/:uuid/enabled", h.setSourceEnabled)
 	r.GET("/prospects", h.listLeads)
 	r.GET("/prospects/review-queue", h.listReviewQueue)
+	r.GET("/prospects/opt-outs", h.listOptOuts)
 	r.GET("/prospects/kill-switch", h.getKillSwitch)
 	r.PUT("/prospects/kill-switch", h.setKillSwitch)
 	r.GET("/prospects/:uuid", h.getLead)
 	r.POST("/prospects/:uuid/review", h.reviewLead)
 	r.POST("/prospects/:uuid/contact", h.contactLead)
+	r.POST("/prospects/:uuid/status", h.transitionLead)
+	r.POST("/prospects/:uuid/opt-out", h.optOutLead)
 	r.PATCH("/lead-sources/:uuid", h.updateSource)
 	r.DELETE("/lead-sources/:uuid", h.deleteSource)
 }
@@ -211,6 +214,78 @@ func (h *Handler) contactLead(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, result)
+}
+
+// ---- 批次 6：状态流转与拒收 ----
+
+func (h *Handler) transitionLead(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	var in TransitionLeadInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	result, err := h.svc.TransitionLead(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid"), in.Status)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrLeadNotFound):
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
+		case errors.Is(err, ErrInvalidStatus), errors.Is(err, ErrInvalidTransition):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "流转线索状态失败")
+		}
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *Handler) optOutLead(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	var in OptOutLeadInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	result, err := h.svc.OptOutLead(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid"), in.Reason)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrLeadNotFound):
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
+		case errors.Is(err, ErrInvalidTransition):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "拒收线索失败")
+		}
+		return
+	}
+	httpx.OK(c, result)
+}
+
+func (h *Handler) listOptOuts(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	items, err := h.svc.ListOptOuts(c.Request.Context(), c.Query("leadType"), limit)
+	if err != nil {
+		if errors.Is(err, ErrInvalidStatus) {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载拒收名单失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
 }
 
 // ---- 批次 2：全局停机开关 ----

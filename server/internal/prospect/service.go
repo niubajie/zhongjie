@@ -277,6 +277,84 @@ func (s *Service) ContactLead(ctx context.Context, adminID int64, uuid string, i
 	return toFollowUpVO(followUp, content), nil
 }
 
+// ---- 批次 6：状态流转与拒收 ----
+
+// TransitionLead 手动流转线索状态。reviewed / contacted / opt_out 各有专用接口，
+// 通用流转只接受 following_up / converted / published / cold / lost / rejected / ignored。
+func (s *Service) TransitionLead(ctx context.Context, adminID int64, uuid, target string) (ProspectLeadVO, error) {
+	if target == StatusReviewed || target == StatusContacted || target == StatusOptOut {
+		return ProspectLeadVO{}, fmt.Errorf("%w: %s 请使用对应专用接口", ErrInvalidStatus, target)
+	}
+	if !ValidAdminTargetStatus(target) {
+		return ProspectLeadVO{}, fmt.Errorf("%w: %s", ErrInvalidStatus, target)
+	}
+	lead, err := s.repo.GetLead(ctx, uuid)
+	if err != nil {
+		return ProspectLeadVO{}, err
+	}
+	if !CanTransition(lead.Status, target) {
+		return ProspectLeadVO{}, fmt.Errorf("%w: %s → %s", ErrInvalidTransition, lead.Status, target)
+	}
+	if err := s.repo.TransitionLeadStatus(ctx, uuid, lead.Status, target); err != nil {
+		return ProspectLeadVO{}, err
+	}
+	s.repo.Audit(ctx, adminID, "prospect.lead.transition."+target, "prospect_lead", uuid)
+
+	updated, err := s.repo.GetLead(ctx, uuid)
+	if err != nil {
+		return ProspectLeadVO{}, err
+	}
+	return toLeadVO(updated), nil
+}
+
+// OptOutLead 人工拒收：写入全局拒收名单（按 contact_hash 跨源生效），并把线索置为 opt_out。
+// 先写名单再改状态：即使状态并发变化，也保证后续联系被拦截。
+func (s *Service) OptOutLead(ctx context.Context, adminID int64, uuid, reason string) (ProspectLeadVO, error) {
+	lead, err := s.repo.GetLead(ctx, uuid)
+	if err != nil {
+		return ProspectLeadVO{}, err
+	}
+	if !CanTransition(lead.Status, StatusOptOut) {
+		return ProspectLeadVO{}, fmt.Errorf("%w: 当前状态 %s 不能拒收", ErrInvalidTransition, lead.Status)
+	}
+	if len(lead.ContactHash) > 0 {
+		if err := s.repo.CreateOptOut(ctx, lead.ContactHash, lead.LeadType, strings.TrimSpace(reason)); err != nil {
+			return ProspectLeadVO{}, err
+		}
+	}
+	if err := s.repo.TransitionLeadStatus(ctx, uuid, lead.Status, StatusOptOut); err != nil {
+		return ProspectLeadVO{}, err
+	}
+	s.repo.Audit(ctx, adminID, "prospect.lead.optout", "prospect_lead", uuid)
+
+	updated, err := s.repo.GetLead(ctx, uuid)
+	if err != nil {
+		return ProspectLeadVO{}, err
+	}
+	return toLeadVO(updated), nil
+}
+
+// ListOptOuts 拒收名单列表。
+func (s *Service) ListOptOuts(ctx context.Context, leadType string, limit int) ([]OptOutVO, error) {
+	if leadType != "" && leadType != LeadTypeTenant && leadType != LeadTypeLandlord {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidStatus, leadType)
+	}
+	rows, err := s.repo.ListOptOuts(ctx, leadType, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OptOutVO, 0, len(rows))
+	for _, o := range rows {
+		out = append(out, OptOutVO{
+			ID:         o.ID,
+			LeadType:   o.LeadType,
+			Reason:     o.Reason,
+			OptedOutAt: o.OptedOutAt,
+		})
+	}
+	return out, nil
+}
+
 // reviewTargetStatus 把复核结论映射为目标状态。
 func reviewTargetStatus(decision string) (string, error) {
 	switch decision {

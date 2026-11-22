@@ -164,6 +164,23 @@ func CanTransition(from, to string) bool {
 	return next[to]
 }
 
+// adminTargetStatuses 管理站可手动流转的目标状态（批次 6）。
+// reviewed / contacted 有专用接口，opt_out 必须走拒收接口，均不在此列。
+var adminTargetStatuses = map[string]bool{
+	StatusFollowingUp: true,
+	StatusConverted:   true,
+	StatusPublished:   true,
+	StatusCold:        true,
+	StatusLost:        true,
+	StatusRejected:    true,
+	StatusIgnored:     true,
+}
+
+// ValidAdminTargetStatus 判断目标状态是否允许通过通用流转接口设置。
+func ValidAdminTargetStatus(s string) bool {
+	return adminTargetStatuses[s]
+}
+
 // LeadSource 信息源配置，也是单源停机开关的载体。
 type LeadSource struct {
 	ID          int64
@@ -332,4 +349,24 @@ type ProspectLeadDetailVO struct {
 	ProspectLeadVO
 	RawText   string       `json:"rawText"`
 	FollowUps []FollowUpVO `json:"followUps"`
+}
+
+// ---- 批次 6：状态流转与拒收 ----
+
+// TransitionLeadInput 手动流转目标状态。
+type TransitionLeadInput struct {
+	Status string `json:"status"`
+}
+
+// OptOutLeadInput 拒收录入，原因可选。
+type OptOutLeadInput struct {
+	Reason string `json:"reason,omitempty"`
+}
+
+// OptOutVO 拒收记录视图；不返回 contact_hash，避免不可逆标识外泄。
+type OptOutVO struct {
+	ID         int64  `json:"id"`
+	LeadType   string `json:"leadType"`
+	Reason     string `json:"reason,omitempty"`
+	OptedOutAt string `json:"optedOutAt"`
 }
