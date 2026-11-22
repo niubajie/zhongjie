@@ -524,6 +524,70 @@ func (r *Repository) ListCollectRuns(ctx context.Context, sourceUUID string, lim
 	return out, rows.Err()
 }
 
+// ---- 批次 13：操作审计日志查询 ----
+
+// auditLogWhere 只查 prospect.* 动作，避免把其他模块日志暴露到获客后台。
+const auditLogWhere = `l.action LIKE 'prospect.%'
+	AND ($1 = '' OR l.action = $1)
+	AND ($2 = '' OR l.target_type = $2)
+	AND ($3 = '' OR l.target_id = $3)
+	AND ($4 = 0 OR l.actor_id = $4)
+	AND ($5::timestamptz IS NULL OR l.created_at >= $5)
+	AND ($6::timestamptz IS NULL OR l.created_at <= $6)`
+
+// ListAuditLogs 分页查询获客审计日志，返回当前页与符合条件总数。
+func (r *Repository) ListAuditLogs(ctx context.Context, f AuditLogFilter) ([]AuditLog, int64, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	var fromArg, toArg *time.Time
+	if !f.From.IsZero() {
+		fromArg = &f.From
+	}
+	if !f.To.IsZero() {
+		toArg = &f.To
+	}
+
+	var total int64
+	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM audit_logs l WHERE `+auditLogWhere,
+		f.Action, f.TargetType, f.TargetID, f.ActorID, fromArg, toArg).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count audit logs: %w", err)
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT l.id, l.actor_type, COALESCE(l.actor_id, 0), COALESCE(a.username, ''),
+		       l.action, l.target_type, COALESCE(l.target_id, ''),
+		       `+fmt.Sprintf(tsFmt, "l.created_at")+`
+		FROM audit_logs l
+		LEFT JOIN admin_users a ON a.id = l.actor_id AND l.actor_type = 'admin'
+		WHERE `+auditLogWhere+`
+		ORDER BY l.created_at DESC, l.id DESC
+		LIMIT $7 OFFSET $8
+	`, f.Action, f.TargetType, f.TargetID, f.ActorID, fromArg, toArg, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list audit logs: %w", err)
+	}
+	defer rows.Close()
+	out := []AuditLog{}
+	for rows.Next() {
+		var l AuditLog
+		if err := rows.Scan(&l.ID, &l.ActorType, &l.ActorID, &l.ActorName,
+			&l.Action, &l.TargetType, &l.TargetID, &l.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, l)
+	}
+	return out, total, rows.Err()
+}
+
 // LeadExistsByContactHash 判断同一联系方式（同 lead_type）是否已入库，用于跨平台去重。
 func (r *Repository) LeadExistsByContactHash(ctx context.Context, contactHash []byte, leadType string) (bool, error) {
 	var exists bool

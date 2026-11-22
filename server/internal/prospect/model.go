@@ -24,6 +24,7 @@ var (
 	ErrInvalidContact       = errors.New("联系参数不合法")
 	ErrInvalidFollowUp      = errors.New("跟进参数不合法")
 	ErrNotificationNotFound = errors.New("通知不存在")
+	ErrInvalidAuditQuery    = errors.New("审计日志查询参数不合法")
 )
 
 // 线索类型
@@ -563,4 +564,62 @@ type CollectRunVO struct {
 	ErrorMessage string `json:"errorMessage,omitempty"`
 	StartedAt    string `json:"startedAt"`
 	FinishedAt   string `json:"finishedAt"`
+}
+
+// ---- 批次 13：操作审计日志 ----
+
+// AuditLogQuery 审计日志查询参数（来自 HTTP query）。
+type AuditLogQuery struct {
+	Action     string
+	TargetType string
+	TargetID   string
+	ActorID    int64
+	From       string
+	To         string
+	Limit      int
+	Offset     int
+}
+
+// AuditLogFilter 落库查询条件；From / To 为零值表示不过滤。
+type AuditLogFilter struct {
+	Action     string
+	TargetType string
+	TargetID   string
+	ActorID    int64
+	From       time.Time
+	To         time.Time
+	Limit      int
+	Offset     int
+}
+
+// AuditLog 审计日志实体，ActorName 为操作人用户名（非管理员为空）。
+type AuditLog struct {
+	ID         int64
+	ActorType  string
+	ActorID    int64
+	ActorName  string
+	Action     string
+	TargetType string
+	TargetID   string
+	CreatedAt  string
+}
+
+// AuditLogVO 审计日志视图。
+type AuditLogVO struct {
+	ID         int64  `json:"id"`
+	ActorType  string `json:"actorType"`
+	ActorID    int64  `json:"actorId,omitempty"`
+	ActorName  string `json:"actorName,omitempty"`
+	Action     string `json:"action"`
+	TargetType string `json:"targetType"`
+	TargetID   string `json:"targetId,omitempty"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+// AuditLogListVO 审计日志分页结果。
+type AuditLogListVO struct {
+	Items  []AuditLogVO `json:"items"`
+	Total  int64        `json:"total"`
+	Limit  int          `json:"limit"`
+	Offset int          `json:"offset"`
 }

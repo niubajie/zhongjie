@@ -773,3 +773,52 @@ export async function fetchOptOuts(
   )
   return data.items
 }
+
+export interface ProspectAuditLog {
+  id: number
+  actorType: 'admin' | 'user'
+  actorId?: number
+  actorName?: string
+  action: string
+  targetType: string
+  targetId?: string
+  createdAt: string
+}
+
+export interface ProspectAuditLogPage {
+  items: ProspectAuditLog[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface ProspectAuditLogFilters {
+  action?: string
+  targetType?: string
+  targetId?: string
+  actorId?: string
+  from?: string
+  to?: string
+  limit?: number
+  offset?: number
+}
+
+export async function fetchProspectAuditLogs(
+  token: string,
+  filters: ProspectAuditLogFilters = {},
+): Promise<ProspectAuditLogPage> {
+  const params = new URLSearchParams()
+  if (filters.action) params.set('action', filters.action)
+  if (filters.targetType) params.set('targetType', filters.targetType)
+  if (filters.targetId) params.set('targetId', filters.targetId)
+  if (filters.actorId) params.set('actorId', filters.actorId)
+  if (filters.from) params.set('from', filters.from)
+  if (filters.to) params.set('to', filters.to)
+  params.set('limit', String(filters.limit ?? 50))
+  params.set('offset', String(filters.offset ?? 0))
+  return request<ProspectAuditLogPage>(
+    `/v1/admin/prospects/audit-logs?${params.toString()}`,
+    {},
+    token,
+  )
+}

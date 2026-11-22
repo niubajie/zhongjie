@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"housing/internal/secure"
 )
@@ -414,6 +415,79 @@ func (s *Service) ListOptOuts(ctx context.Context, leadType string, limit int) (
 		})
 	}
 	return out, nil
+}
+
+// ---- 批次 13：操作审计日志查询 ----
+
+// auditLogTimeLayouts 允许的时间入参格式：RFC3339 或前端 datetime-local。
+var auditLogTimeLayouts = []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02"}
+
+// ListAuditLogs 查询操作审计日志：默认只看 prospect.* 动作，
+// 支持按动作 / 资源 / 操作人 / 时间过滤，按时间倒序分页。
+func (s *Service) ListAuditLogs(ctx context.Context, in AuditLogQuery) (AuditLogListVO, error) {
+	limit := in.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := in.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	from, err := parseAuditTime(in.From)
+	if err != nil {
+		return AuditLogListVO{}, err
+	}
+	to, err := parseAuditTime(in.To)
+	if err != nil {
+		return AuditLogListVO{}, err
+	}
+	if !from.IsZero() && !to.IsZero() && to.Before(from) {
+		return AuditLogListVO{}, fmt.Errorf("%w: 结束时间不能早于开始时间", ErrInvalidAuditQuery)
+	}
+	logs, total, err := s.repo.ListAuditLogs(ctx, AuditLogFilter{
+		Action:     strings.TrimSpace(in.Action),
+		TargetType: strings.TrimSpace(in.TargetType),
+		TargetID:   strings.TrimSpace(in.TargetID),
+		ActorID:    in.ActorID,
+		From:       from,
+		To:         to,
+		Limit:      limit,
+		Offset:     offset,
+	})
+	if err != nil {
+		return AuditLogListVO{}, err
+	}
+	out := make([]AuditLogVO, 0, len(logs))
+	for _, l := range logs {
+		out = append(out, AuditLogVO{
+			ID:         l.ID,
+			ActorType:  l.ActorType,
+			ActorID:    l.ActorID,
+			ActorName:  l.ActorName,
+			Action:     l.Action,
+			TargetType: l.TargetType,
+			TargetID:   l.TargetID,
+			CreatedAt:  l.CreatedAt,
+		})
+	}
+	return AuditLogListVO{Items: out, Total: total, Limit: limit, Offset: offset}, nil
+}
+
+// parseAuditTime 解析可选时间参数，空值表示不过滤。
+func parseAuditTime(v string) (time.Time, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return time.Time{}, nil
+	}
+	for _, layout := range auditLogTimeLayouts {
+		if t, err := time.Parse(layout, v); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("%w: 时间格式需为 RFC3339", ErrInvalidAuditQuery)
 }
 
 // reviewTargetStatus 把复核结论映射为目标状态。

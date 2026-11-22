@@ -8,6 +8,7 @@ import {
   fetchKillSwitch,
   fetchLeadSources,
   fetchOptOuts,
+  fetchProspectAuditLogs,
   fetchProspectDetail,
   fetchProspectNotifications,
   fetchProspectReminders,
@@ -30,6 +31,7 @@ import {
   type LeadSourceKind,
   type LeadType,
   type OptOut,
+  type ProspectAuditLog,
   type ProspectContactChannel,
   type ProspectCollectRun,
   type ProspectIntentStatus,
@@ -112,6 +114,61 @@ const INTENT_ORDER: ProspectIntentStatus[] = [
   'irrelevant',
   'unknown',
 ]
+
+// ---- 批次 13：操作审计日志 ----
+
+const AUDIT_PAGE_SIZE = 20
+
+const AUDIT_TARGET_LABEL: Record<string, string> = {
+  lead_source: '信息源',
+  prospect_lead: '线索',
+  prospect_setting: '获客配置',
+  admin_user: '管理员',
+}
+
+const AUDIT_TARGET_TYPES = Object.keys(AUDIT_TARGET_LABEL)
+
+const AUDIT_ACTION_LABEL: Record<string, string> = {
+  'prospect.source.create': '新增信息源',
+  'prospect.source.update': '编辑信息源',
+  'prospect.source.enable': '启用信息源',
+  'prospect.source.disable': '停用信息源',
+  'prospect.source.delete': '删除信息源',
+  'prospect.killswitch.enable': '开启停机开关',
+  'prospect.killswitch.disable': '关闭停机开关',
+  'prospect.lead.view': '查看线索原文',
+  'prospect.lead.approve': '复核通过',
+  'prospect.lead.reject': '复核拒绝',
+  'prospect.lead.contact': '发起首条联系',
+  'prospect.lead.followup': '记录跟进',
+  'prospect.lead.optout': '人工拒收',
+}
+
+function auditActionLabel(action: string): string {
+  const known = AUDIT_ACTION_LABEL[action]
+  if (known) {
+    return known
+  }
+  const prefix = 'prospect.lead.transition.'
+  if (action.startsWith(prefix)) {
+    const status = action.slice(prefix.length) as ProspectStatus
+    return `流转状态：${STATUS_LABEL[status] ?? status}`
+  }
+  return action
+}
+
+interface AuditFilterForm {
+  action: string
+  targetType: string
+  targetId: string
+  actorId: string
+  from: string
+  to: string
+}
+
+function emptyAuditFilter(): AuditFilterForm {
+  return { action: '', targetType: '', targetId: '', actorId: '', from: '', to: '' }
+}
 
 function formatRate(rate: number): string {
   return `${Math.round(rate * 1000) / 10}%`
@@ -260,6 +317,14 @@ export default function Prospecting({ token }: { token: string }) {
   const [stats, setStats] = useState<ProspectStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
   const [statsError, setStatsError] = useState('')
+
+  const [auditForm, setAuditForm] = useState<AuditFilterForm>(emptyAuditFilter)
+  const [auditFilters, setAuditFilters] = useState<AuditFilterForm>(emptyAuditFilter)
+  const [auditOffset, setAuditOffset] = useState(0)
+  const [auditLogs, setAuditLogs] = useState<ProspectAuditLog[]>([])
+  const [auditTotal, setAuditTotal] = useState(0)
+  const [auditLoading, setAuditLoading] = useState(true)
+  const [auditError, setAuditError] = useState('')
 
   const [optOutType, setOptOutType] = useState<LeadType | ''>('')
   const [optOuts, setOptOuts] = useState<OptOut[]>([])
@@ -486,6 +551,41 @@ export default function Prospecting({ token }: { token: string }) {
     }
   }, [token])
 
+  useEffect(() => {
+    let cancelled = false
+    setAuditLoading(true)
+    fetchProspectAuditLogs(token, {
+      action: auditFilters.action.trim() || undefined,
+      targetType: auditFilters.targetType || undefined,
+      targetId: auditFilters.targetId.trim() || undefined,
+      actorId: auditFilters.actorId.trim() || undefined,
+      from: auditFilters.from ? new Date(auditFilters.from).toISOString() : undefined,
+      to: auditFilters.to ? new Date(auditFilters.to).toISOString() : undefined,
+      limit: AUDIT_PAGE_SIZE,
+      offset: auditOffset,
+    })
+      .then((page) => {
+        if (!cancelled) {
+          setAuditLogs(page.items)
+          setAuditTotal(page.total)
+          setAuditError('')
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setAuditError(err.message || '审计日志加载失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAuditLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, auditFilters, auditOffset])
+
   function refreshSources() {
     return fetchLeadSources(token)
       .then((items) => {
@@ -558,6 +658,18 @@ export default function Prospecting({ token }: { token: string }) {
       .then(() => refreshNotifications())
       .catch((err: Error) => setNotificationsError(err.message || '标记已读失败'))
       .finally(() => setNotificationsBusy(false))
+  }
+
+  function submitAuditFilter(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setAuditOffset(0)
+    setAuditFilters({ ...auditForm })
+  }
+
+  function resetAuditFilter() {
+    setAuditForm(emptyAuditFilter())
+    setAuditOffset(0)
+    setAuditFilters(emptyAuditFilter())
   }
 
   function refreshStats() {
@@ -1683,6 +1795,123 @@ export default function Prospecting({ token }: { token: string }) {
               <tr>
                 <td colSpan={3} className="empty">
                   暂无拒收记录
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="sub-head">操作审计日志</h3>
+      <p className="muted">
+        仅展示自主获客相关操作，审计记录只追加不可修改；查看线索原文也会留痕。
+      </p>
+      <form className="prospect-form" onSubmit={submitAuditFilter}>
+        <div className="draft-fields">
+          <input
+            value={auditForm.action}
+            onChange={(e) => setAuditForm({ ...auditForm, action: e.target.value })}
+            placeholder="动作（如 prospect.lead.approve）"
+          />
+          <select
+            value={auditForm.targetType}
+            onChange={(e) => setAuditForm({ ...auditForm, targetType: e.target.value })}
+          >
+            <option value="">全部资源</option>
+            {AUDIT_TARGET_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {AUDIT_TARGET_LABEL[type]}
+              </option>
+            ))}
+          </select>
+          <input
+            value={auditForm.targetId}
+            onChange={(e) => setAuditForm({ ...auditForm, targetId: e.target.value })}
+            placeholder="资源 ID / 线索 UUID"
+          />
+          <input
+            value={auditForm.actorId}
+            onChange={(e) => setAuditForm({ ...auditForm, actorId: e.target.value })}
+            placeholder="操作人 ID"
+            inputMode="numeric"
+          />
+          <input
+            type="datetime-local"
+            value={auditForm.from}
+            onChange={(e) => setAuditForm({ ...auditForm, from: e.target.value })}
+          />
+          <input
+            type="datetime-local"
+            value={auditForm.to}
+            onChange={(e) => setAuditForm({ ...auditForm, to: e.target.value })}
+          />
+        </div>
+        <div className="action-row">
+          <button className="btn primary" type="submit" disabled={auditLoading}>
+            查询
+          </button>
+          <button className="btn secondary" type="button" onClick={resetAuditFilter}>
+            重置
+          </button>
+        </div>
+      </form>
+      <div className="prospect-toolbar">
+        <span className="muted">
+          {auditLoading
+            ? '加载中…'
+            : `共 ${auditTotal} 条，当前第 ${Math.floor(auditOffset / AUDIT_PAGE_SIZE) + 1} 页`}
+        </span>
+        <button
+          className="btn secondary"
+          onClick={() => setAuditOffset(Math.max(0, auditOffset - AUDIT_PAGE_SIZE))}
+          disabled={auditLoading || auditOffset === 0}
+        >
+          上一页
+        </button>
+        <button
+          className="btn secondary"
+          onClick={() => setAuditOffset(auditOffset + AUDIT_PAGE_SIZE)}
+          disabled={auditLoading || auditOffset + AUDIT_PAGE_SIZE >= auditTotal}
+        >
+          下一页
+        </button>
+      </div>
+      {auditError && <div className="alert">{auditError}</div>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>操作人</th>
+              <th>动作</th>
+              <th>资源</th>
+              <th>资源 ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {auditLogs.map((log) => (
+              <tr key={log.id}>
+                <td>{log.createdAt}</td>
+                <td>{log.actorName || (log.actorId ? `#${log.actorId}` : log.actorType)}</td>
+                <td>
+                  {auditActionLabel(log.action)}
+                  <span className="muted"> · {log.action}</span>
+                </td>
+                <td>{AUDIT_TARGET_LABEL[log.targetType] ?? log.targetType}</td>
+                <td>{log.targetId || '—'}</td>
+              </tr>
+            ))}
+            {auditLoading && (
+              <tr>
+                <td colSpan={5} className="empty">
+                  加载中…
+                </td>
+              </tr>
+            )}
+            {!auditLoading && auditLogs.length === 0 && (
+              <tr>
+                <td colSpan={5} className="empty">
+                  暂无审计日志
                 </td>
               </tr>
             )}

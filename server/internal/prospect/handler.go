@@ -30,6 +30,7 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.GET("/prospects/opt-outs", h.listOptOuts)
 	r.GET("/prospects/reminders", h.listReminders)
 	r.GET("/prospects/collect-runs", h.listCollectRuns)
+	r.GET("/prospects/audit-logs", h.listAuditLogs)
 	r.GET("/prospects/notifications", h.listNotifications)
 	r.POST("/prospects/notifications/:id/read", h.markNotificationRead)
 	r.GET("/prospects/stats", h.getStats)
@@ -476,4 +477,55 @@ func (h *Handler) deleteSource(c *gin.Context) {
 		return
 	}
 	httpx.OK(c, gin.H{"deleted": true})
+}
+
+// ---- 批次 13：操作审计日志 ----
+
+func (h *Handler) listAuditLogs(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	offset := 0
+	if raw := c.Query("offset"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "分页参数不合法")
+			return
+		}
+		offset = n
+	}
+	var actorID int64
+	if raw := c.Query("actorId"); raw != "" {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "操作人 ID 不合法")
+			return
+		}
+		actorID = n
+	}
+	result, err := h.svc.ListAuditLogs(c.Request.Context(), AuditLogQuery{
+		Action:     c.Query("action"),
+		TargetType: c.Query("targetType"),
+		TargetID:   c.Query("targetId"),
+		ActorID:    actorID,
+		From:       c.Query("from"),
+		To:         c.Query("to"),
+		Limit:      limit,
+		Offset:     offset,
+	})
+	if err != nil {
+		if errors.Is(err, ErrInvalidAuditQuery) {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载审计日志失败")
+		return
+	}
+	httpx.OK(c, result)
 }
