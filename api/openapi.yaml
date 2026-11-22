@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.8.0
+  version: 0.9.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
@@ -1177,7 +1177,7 @@ paths:
   /v1/admin/prospects/{uuid}:
     get:
       tags: [prospect]
-      summary: 线索详情（批次1，不含原文密文；批次5 补解密展示）
+      summary: 线索详情（批次5：解密原文 + 跟进记录，读取即写审计日志）
       security:
         - bearerAuth: []
       parameters:
@@ -1191,7 +1191,75 @@ paths:
           content:
             application/json:
               schema:
+                $ref: "#/components/schemas/ProspectLeadDetailEnvelope"
+  /v1/admin/prospects/review-queue:
+    get:
+      tags: [prospect]
+      summary: 待复核队列（批次5，已评分有效意向且未复核）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: leadType
+          in: query
+          schema: {type: string, enum: [tenant, landlord]}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 待复核线索列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadListEnvelope"
+  /v1/admin/prospects/{uuid}/review:
+    post:
+      tags: [prospect]
+      summary: 人工复核（批次5：approve → reviewed，reject → rejected）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewLeadInput"
+      responses:
+        "200":
+          description: 复核后的线索
+          content:
+            application/json:
+              schema:
                 $ref: "#/components/schemas/ProspectLeadEnvelope"
+  /v1/admin/prospects/{uuid}/contact:
+    post:
+      tags: [prospect]
+      summary: 人工发起首条联系（批次5，内容由操作员填写，禁止自动发送）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactLeadInput"
+      responses:
+        "200":
+          description: 已发送的跟进记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowUpEnvelope"
   /v1/admin/prospects/kill-switch:
     get:
       tags: [prospect]
@@ -2114,3 +2182,53 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/KillSwitchState"
+    ProspectLeadDetail:
+      allOf:
+        - $ref: "#/components/schemas/ProspectLead"
+        - type: object
+          properties:
+            rawText:
+              type: string
+              description: 解密后的原文，仅复核/联系所需；每次读取写审计日志
+            followUps:
+              type: array
+              items:
+                $ref: "#/components/schemas/FollowUp"
+    ProspectLeadDetailEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectLeadDetail"
+    ReviewLeadInput:
+      type: object
+      required: [decision]
+      properties:
+        decision: {type: string, enum: [approve, reject]}
+    ContactLeadInput:
+      type: object
+      required: [channel, content]
+      properties:
+        channel: {type: string, enum: [in_app, sms, wechat, phone]}
+        content:
+          type: string
+          minLength: 1
+          description: 首条联系内容，必须人工填写，服务端不自动生成
+    FollowUp:
+      type: object
+      properties:
+        id: {type: integer}
+        channel: {type: string, enum: [in_app, sms, wechat, phone]}
+        direction: {type: string, enum: [outbound, inbound]}
+        status: {type: string, enum: [pending, sent, failed, received]}
+        content: {type: string}
+        sentAt: {type: string}
+        createdAt: {type: string}
+    FollowUpEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/FollowUp"

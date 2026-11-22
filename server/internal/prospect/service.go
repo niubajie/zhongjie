@@ -4,18 +4,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
+
+	"housing/internal/secure"
 )
 
 // Service 承载业务判断；采集 / 评分 / 联系 / 跟进在后续批次扩展。
 // 批次 1 只提供信息源与线索的基础读写，不启用采集。
 type Service struct {
 	repo   *Repository
+	pii    *secure.PII
 	halted atomic.Bool
 }
 
-func NewService(repo *Repository) *Service {
-	s := &Service{repo: repo}
+func NewService(repo *Repository, pii *secure.PII) *Service {
+	s := &Service{repo: repo, pii: pii}
 	// 启动时加载全局停机状态；失败不阻塞启动（默认不停机，主链路零影响）。
 	if v, err := repo.GetSetting(context.Background(), SettingKeyGlobalHalt); err == nil {
 		s.halted.Store(parseBoolSetting(v))
@@ -149,6 +153,164 @@ func (s *Service) DeleteSource(ctx context.Context, adminID int64, uuid string) 
 	}
 	s.repo.Audit(ctx, adminID, "prospect.source.delete", "lead_source", uuid)
 	return nil
+}
+
+// ---- 批次 5：人工复核 + 首条联系 ----
+
+// ListReviewQueue 返回待复核队列（已评分达标的 status=new 线索）。
+func (s *Service) ListReviewQueue(ctx context.Context, leadType string, limit int) ([]ProspectLeadVO, error) {
+	if leadType != "" && leadType != LeadTypeTenant && leadType != LeadTypeLandlord {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidStatus, leadType)
+	}
+	leads, err := s.repo.ListReviewQueue(ctx, leadType, ReviewScoreThreshold, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ProspectLeadVO, 0, len(leads))
+	for _, l := range leads {
+		out = append(out, toLeadVO(l))
+	}
+	return out, nil
+}
+
+// GetLeadDetail 读取线索详情：解密原文并写入审计日志（合规：每次读取必须留痕）。
+func (s *Service) GetLeadDetail(ctx context.Context, adminID int64, uuid string) (ProspectLeadDetailVO, error) {
+	lead, err := s.repo.GetLead(ctx, uuid)
+	if err != nil {
+		return ProspectLeadDetailVO{}, err
+	}
+	followUps, err := s.repo.ListFollowUps(ctx, lead.ID)
+	if err != nil {
+		return ProspectLeadDetailVO{}, err
+	}
+	// 先写审计再解密，保证任何一次原文读取都可追溯。
+	s.repo.Audit(ctx, adminID, "prospect.lead.view", "prospect_lead", uuid)
+
+	detail := ProspectLeadDetailVO{
+		ProspectLeadVO: toLeadVO(lead),
+		FollowUps:      make([]FollowUpVO, 0, len(followUps)),
+	}
+	if s.pii != nil {
+		if raw, err := s.pii.DecryptString(lead.RawTextEnc); err == nil {
+			detail.RawText = raw
+		}
+	}
+	for _, f := range followUps {
+		content := ""
+		if s.pii != nil {
+			if c, err := s.pii.DecryptString(f.ContentEnc); err == nil {
+				content = c
+			}
+		}
+		detail.FollowUps = append(detail.FollowUps, toFollowUpVO(f, content))
+	}
+	return detail, nil
+}
+
+// ReviewLead 人工复核：approve → reviewed，reject → rejected，均写审计。
+func (s *Service) ReviewLead(ctx context.Context, adminID int64, uuid, decision string) (ProspectLeadVO, error) {
+	target, err := reviewTargetStatus(decision)
+	if err != nil {
+		return ProspectLeadVO{}, err
+	}
+	lead, err := s.repo.GetLead(ctx, uuid)
+	if err != nil {
+		return ProspectLeadVO{}, err
+	}
+	if !CanTransition(lead.Status, target) {
+		return ProspectLeadVO{}, fmt.Errorf("%w: %s → %s", ErrInvalidTransition, lead.Status, target)
+	}
+	if err := s.repo.TransitionLeadStatus(ctx, uuid, lead.Status, target); err != nil {
+		return ProspectLeadVO{}, err
+	}
+	action := "prospect.lead.approve"
+	if target == StatusRejected {
+		action = "prospect.lead.reject"
+	}
+	s.repo.Audit(ctx, adminID, action, "prospect_lead", uuid)
+
+	updated, err := s.repo.GetLead(ctx, uuid)
+	if err != nil {
+		return ProspectLeadVO{}, err
+	}
+	return toLeadVO(updated), nil
+}
+
+// ContactLead 人工发起首条联系：内容由操作员填写，服务端不会自动发送。
+// 前置条件：已复核（reviewed）、未停机、未命中拒收名单。
+func (s *Service) ContactLead(ctx context.Context, adminID int64, uuid string, in ContactLeadInput) (FollowUpVO, error) {
+	if err := validateContactInput(in); err != nil {
+		return FollowUpVO{}, err
+	}
+	if s.IsHalted() {
+		return FollowUpVO{}, ErrHalted
+	}
+	lead, err := s.repo.GetLead(ctx, uuid)
+	if err != nil {
+		return FollowUpVO{}, err
+	}
+	if !CanTransition(lead.Status, StatusContacted) {
+		return FollowUpVO{}, fmt.Errorf("%w: 当前状态 %s 不能发起首条联系", ErrInvalidTransition, lead.Status)
+	}
+	if len(lead.ContactHash) > 0 {
+		optedOut, err := s.repo.OptOutExists(ctx, lead.ContactHash, lead.LeadType)
+		if err != nil {
+			return FollowUpVO{}, err
+		}
+		if optedOut {
+			return FollowUpVO{}, ErrOptOutExists
+		}
+	}
+	if s.pii == nil {
+		return FollowUpVO{}, errors.New("联系内容加密未初始化")
+	}
+	content := strings.TrimSpace(in.Content)
+	contentEnc, err := s.pii.EncryptString(content)
+	if err != nil {
+		return FollowUpVO{}, err
+	}
+	auditID := s.repo.Audit(ctx, adminID, "prospect.lead.contact", "prospect_lead", uuid)
+	followUp, err := s.repo.ContactLead(ctx, lead.ID, in.Channel, contentEnc, auditID)
+	if err != nil {
+		return FollowUpVO{}, err
+	}
+	return toFollowUpVO(followUp, content), nil
+}
+
+// reviewTargetStatus 把复核结论映射为目标状态。
+func reviewTargetStatus(decision string) (string, error) {
+	switch decision {
+	case ReviewDecisionApprove:
+		return StatusReviewed, nil
+	case ReviewDecisionReject:
+		return StatusRejected, nil
+	}
+	return "", fmt.Errorf("%w: %s", ErrInvalidReview, decision)
+}
+
+// validateContactInput 联系渠道与内容校验（首条联系必须人工填写内容）。
+func validateContactInput(in ContactLeadInput) error {
+	switch in.Channel {
+	case ChannelInApp, ChannelSMS, ChannelWeChat, ChannelPhone:
+	default:
+		return fmt.Errorf("%w: 联系渠道不合法", ErrInvalidContact)
+	}
+	if strings.TrimSpace(in.Content) == "" {
+		return fmt.Errorf("%w: 联系内容不能为空", ErrInvalidContact)
+	}
+	return nil
+}
+
+func toFollowUpVO(f FollowUp, content string) FollowUpVO {
+	return FollowUpVO{
+		ID:        f.ID,
+		Channel:   f.Channel,
+		Direction: f.Direction,
+		Status:    f.Status,
+		Content:   content,
+		SentAt:    f.SentAt,
+		CreatedAt: f.CreatedAt,
+	}
 }
 
 // parseBoolSetting 解析配置值为布尔（供单测覆盖）。

@@ -16,6 +16,9 @@ var (
 	ErrOptOutExists       = errors.New("该联系方式已在拒收名单")
 	ErrInvalidStatus      = errors.New("无效的线索状态")
 	ErrInvalidTransition  = errors.New("不允许的状态转换")
+	ErrHalted             = errors.New("全局停机开关已开启，暂停联系")
+	ErrInvalidReview      = errors.New("无效的复核结论")
+	ErrInvalidContact     = errors.New("联系参数不合法")
 )
 
 // 线索类型
@@ -70,6 +73,12 @@ type UnscoredLead struct {
 	Layout         string
 	CreatedAt      string
 }
+
+// 复核结论（批次 5）：通过 → reviewed，拒绝 → rejected。
+const (
+	ReviewDecisionApprove = "approve"
+	ReviewDecisionReject  = "reject"
+)
 
 // 联系渠道与方向（首条联系 100% 人工审核）
 const (
@@ -181,6 +190,8 @@ type ProspectLead struct {
 	LeadType          string
 	Platform          string
 	ExternalPostID    string
+	RawTextEnc        []byte
+	ContactHash       []byte
 	ContactChannel    string
 	CityCode          string
 	DistrictCode      string
@@ -198,14 +209,15 @@ type ProspectLead struct {
 
 // FollowUp 跟进记录。
 type FollowUp struct {
-	ID        int64
-	LeadID    int64
-	Channel   string
-	Direction string
-	Status    string
-	SentAt    string
-	AuditID   int64
-	CreatedAt string
+	ID         int64
+	LeadID     int64
+	Channel    string
+	Direction  string
+	Status     string
+	ContentEnc []byte
+	SentAt     string
+	AuditID    int64
+	CreatedAt  string
 }
 
 // OptOut 拒收记录，命中后全局停止联系。
@@ -288,4 +300,36 @@ type UpdateSourceInput struct {
 	RobotsOK    bool   `json:"robotsOk"`
 	TermsOK     bool   `json:"termsOk"`
 	ReviewNote  string `json:"reviewNote,omitempty"`
+}
+
+// ---- 批次 5：人工复核与首条联系 ----
+
+// ReviewLeadInput 复核结论。
+type ReviewLeadInput struct {
+	Decision string `json:"decision"`
+}
+
+// ContactLeadInput 首条联系内容由人工填写，服务端不会自动生成或发送。
+type ContactLeadInput struct {
+	Channel string `json:"channel"`
+	Content string `json:"content"`
+}
+
+// FollowUpVO 跟进记录视图，content 为解密后的联系内容。
+type FollowUpVO struct {
+	ID        int64  `json:"id"`
+	Channel   string `json:"channel"`
+	Direction string `json:"direction"`
+	Status    string `json:"status"`
+	Content   string `json:"content,omitempty"`
+	SentAt    string `json:"sentAt,omitempty"`
+	CreatedAt string `json:"createdAt"`
+}
+
+// ProspectLeadDetailVO 线索详情：基础字段 + 解密原文 + 跟进记录。
+// 读取即写审计日志。
+type ProspectLeadDetailVO struct {
+	ProspectLeadVO
+	RawText   string       `json:"rawText"`
+	FollowUps []FollowUpVO `json:"followUps"`
 }

@@ -133,7 +133,7 @@ func main() {
 	adminHandler := admin.NewHandler(adminSvc)
 
 	prospectRepo := prospect.NewRepository(pool)
-	prospectSvc := prospect.NewService(prospectRepo)
+	prospectSvc := prospect.NewService(prospectRepo, pii)
 	prospectHandler := prospect.NewHandler(prospectSvc)
 
 	router := httpapi.NewRouter(cfg, log, tokens, adminTokens, httpapi.Handlers{

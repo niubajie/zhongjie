@@ -135,7 +135,8 @@ func (r *Repository) GetLead(ctx context.Context, uuid string) (ProspectLead, er
 	var l ProspectLead
 	err := r.pool.QueryRow(ctx, `
 		SELECT l.id, l.uuid::text, l.source_id, COALESCE(s.name, ''), l.lead_type, l.platform,
-		       l.external_post_id, l.contact_channel, COALESCE(l.city_code, ''),
+		       l.external_post_id, l.raw_text_enc, l.contact_hash, l.contact_channel,
+		       COALESCE(l.city_code, ''),
 		       COALESCE(l.district_code, ''), COALESCE(l.budget_cents, 0),
 		       COALESCE(l.area_sqm, 0), COALESCE(l.layout, ''), COALESCE(l.intent_score, 0),
 		       l.intent_status, l.status, COALESCE(l.matched_user_id, 0),
@@ -145,9 +146,10 @@ func (r *Repository) GetLead(ctx context.Context, uuid string) (ProspectLead, er
 		LEFT JOIN lead_sources s ON s.id = l.source_id
 		WHERE l.uuid = $1 AND l.deleted_at IS NULL
 	`, uuid).Scan(&l.ID, &l.UUID, &l.SourceID, &l.SourceName, &l.LeadType, &l.Platform,
-		&l.ExternalPostID, &l.ContactChannel, &l.CityCode, &l.DistrictCode, &l.BudgetCents,
-		&l.AreaSqm, &l.Layout, &l.IntentScore, &l.IntentStatus, &l.Status, &l.MatchedUserID,
-		&l.MatchedPropertyID, &l.CreatedAt, &l.UpdatedAt)
+		&l.ExternalPostID, &l.RawTextEnc, &l.ContactHash, &l.ContactChannel, &l.CityCode,
+		&l.DistrictCode, &l.BudgetCents, &l.AreaSqm, &l.Layout, &l.IntentScore,
+		&l.IntentStatus, &l.Status, &l.MatchedUserID, &l.MatchedPropertyID,
+		&l.CreatedAt, &l.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ProspectLead{}, ErrLeadNotFound
 	}
@@ -239,8 +241,8 @@ func (r *Repository) CreateOptOut(ctx context.Context, contactHash []byte, leadT
 func (r *Repository) CreateFollowUp(ctx context.Context, leadID int64, channel, direction string, contentEnc []byte, auditID int64) (int64, error) {
 	var id int64
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO follow_ups (lead_id, channel, direction, content_enc, status, audit_id)
-		VALUES ($1, $2, $3, $4, 'sent', NULLIF($5, 0))
+		INSERT INTO follow_ups (lead_id, channel, direction, content_enc, status, sent_at, audit_id)
+		VALUES ($1, $2, $3, $4, 'sent', now(), NULLIF($5, 0))
 		RETURNING id
 	`, leadID, channel, direction, contentEnc, auditID).Scan(&id)
 	if err != nil {
@@ -251,8 +253,8 @@ func (r *Repository) CreateFollowUp(ctx context.Context, leadID int64, channel, 
 
 func (r *Repository) ListFollowUps(ctx context.Context, leadID int64) ([]FollowUp, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, lead_id, channel, direction, status,
-		       `+fmt.Sprintf(tsFmt, "sent_at")+`, COALESCE(audit_id, 0),
+		SELECT id, lead_id, channel, direction, status, content_enc,
+		       COALESCE(`+fmt.Sprintf(tsFmt, "sent_at")+`, ''), COALESCE(audit_id, 0),
 		       `+fmt.Sprintf(tsFmt, "created_at")+`
 		FROM follow_ups
 		WHERE lead_id = $1
@@ -265,7 +267,7 @@ func (r *Repository) ListFollowUps(ctx context.Context, leadID int64) ([]FollowU
 	out := []FollowUp{}
 	for rows.Next() {
 		var f FollowUp
-		if err := rows.Scan(&f.ID, &f.LeadID, &f.Channel, &f.Direction, &f.Status,
+		if err := rows.Scan(&f.ID, &f.LeadID, &f.Channel, &f.Direction, &f.Status, &f.ContentEnc,
 			&f.SentAt, &f.AuditID, &f.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -276,11 +278,18 @@ func (r *Repository) ListFollowUps(ctx context.Context, leadID int64) ([]FollowU
 
 // ---- 审计 ----
 
-func (r *Repository) Audit(ctx context.Context, adminID int64, action, targetType, targetID string) {
-	_, _ = r.pool.Exec(ctx, `
+// Audit 写一条管理站审计记录，返回审计 ID（失败返回 0，不阻断主流程）。
+func (r *Repository) Audit(ctx context.Context, adminID int64, action, targetType, targetID string) int64 {
+	var id int64
+	err := r.pool.QueryRow(ctx, `
 		INSERT INTO audit_logs (actor_type, actor_id, action, target_type, target_id)
 		VALUES ('admin', $1, $2, $3, $4)
-	`, adminID, action, targetType, targetID)
+		RETURNING id
+	`, adminID, action, targetType, targetID).Scan(&id)
+	if err != nil {
+		return 0
+	}
+	return id
 }
 
 // ---- 批次 2：运行时配置 ----
@@ -479,4 +488,90 @@ func (r *Repository) UpdateLeadIntent(ctx context.Context, uuid, intentStatus, s
 		return fmt.Errorf("update lead intent: %w", err)
 	}
 	return nil
+}
+
+// ---- 批次 5：人工复核与首条联系 ----
+
+// ListReviewQueue 待复核队列：status=new 且已评分达标（有效意向）的线索，按分数降序。
+func (r *Repository) ListReviewQueue(ctx context.Context, leadType string, minScore, limit int) ([]ProspectLead, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT l.id, l.uuid::text, l.source_id, COALESCE(s.name, ''), l.lead_type, l.platform,
+		       l.external_post_id, l.contact_channel, COALESCE(l.city_code, ''),
+		       COALESCE(l.district_code, ''), COALESCE(l.budget_cents, 0),
+		       COALESCE(l.area_sqm, 0), COALESCE(l.layout, ''), COALESCE(l.intent_score, 0),
+		       l.intent_status, l.status, COALESCE(l.matched_user_id, 0),
+		       COALESCE(l.matched_property_id::text, ''),
+		       `+fmt.Sprintf(tsFmt, "l.created_at")+`, `+fmt.Sprintf(tsFmt, "l.updated_at")+`
+		FROM prospect_leads l
+		LEFT JOIN lead_sources s ON s.id = l.source_id
+		WHERE l.deleted_at IS NULL
+		  AND l.status = 'new'
+		  AND l.intent_status <> 'unknown'
+		  AND COALESCE(l.intent_score, 0) >= $1
+		  AND ($2 = '' OR l.lead_type = $2)
+		ORDER BY COALESCE(l.intent_score, 0) DESC, l.created_at ASC
+		LIMIT $3
+	`, minScore, leadType, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list review queue: %w", err)
+	}
+	defer rows.Close()
+	out := []ProspectLead{}
+	for rows.Next() {
+		var l ProspectLead
+		if err := rows.Scan(&l.ID, &l.UUID, &l.SourceID, &l.SourceName, &l.LeadType, &l.Platform,
+			&l.ExternalPostID, &l.ContactChannel, &l.CityCode, &l.DistrictCode, &l.BudgetCents,
+			&l.AreaSqm, &l.Layout, &l.IntentScore, &l.IntentStatus, &l.Status, &l.MatchedUserID,
+			&l.MatchedPropertyID, &l.CreatedAt, &l.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
+// TransitionLeadStatus 带前置状态校验的状态更新，防止并发下的越权流转。
+func (r *Repository) TransitionLeadStatus(ctx context.Context, uuid, from, to string) error {
+	tag, err := r.pool.Exec(ctx, `
+		UPDATE prospect_leads SET status = $3, updated_at = now()
+		WHERE uuid = $1 AND status = $2 AND deleted_at IS NULL
+	`, uuid, from, to)
+	if err != nil {
+		return fmt.Errorf("transition lead status: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrInvalidTransition
+	}
+	return nil
+}
+
+// ContactLead 原子完成：reviewed → contacted，并写入一条已发送的 outbound 跟进记录。
+// 任何一步不满足前置条件都不落库，避免出现「状态改了但没记录」。
+func (r *Repository) ContactLead(ctx context.Context, leadID int64, channel string, contentEnc []byte, auditID int64) (FollowUp, error) {
+	var f FollowUp
+	err := r.pool.QueryRow(ctx, `
+		WITH moved AS (
+			UPDATE prospect_leads SET status = 'contacted', updated_at = now()
+			WHERE id = $1 AND status = 'reviewed' AND deleted_at IS NULL
+			RETURNING id
+		)
+		INSERT INTO follow_ups (lead_id, channel, direction, content_enc, status, sent_at, audit_id)
+		SELECT id, $2, 'outbound', $3, 'sent', now(), NULLIF($4, 0) FROM moved
+		RETURNING id, `+fmt.Sprintf(tsFmt, "sent_at")+`, `+fmt.Sprintf(tsFmt, "created_at")+`
+	`, leadID, channel, contentEnc, auditID).Scan(&f.ID, &f.SentAt, &f.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return FollowUp{}, ErrInvalidTransition
+	}
+	if err != nil {
+		return FollowUp{}, fmt.Errorf("contact lead: %w", err)
+	}
+	f.LeadID = leadID
+	f.Channel = channel
+	f.Direction = DirectionOutbound
+	f.Status = "sent"
+	f.AuditID = auditID
+	return f, nil
 }

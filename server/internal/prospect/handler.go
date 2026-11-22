@@ -26,9 +26,12 @@ func (h *Handler) RegisterAdmin(r *gin.RouterGroup) {
 	r.POST("/lead-sources", h.createSource)
 	r.PATCH("/lead-sources/:uuid/enabled", h.setSourceEnabled)
 	r.GET("/prospects", h.listLeads)
+	r.GET("/prospects/review-queue", h.listReviewQueue)
 	r.GET("/prospects/kill-switch", h.getKillSwitch)
 	r.PUT("/prospects/kill-switch", h.setKillSwitch)
 	r.GET("/prospects/:uuid", h.getLead)
+	r.POST("/prospects/:uuid/review", h.reviewLead)
+	r.POST("/prospects/:uuid/contact", h.contactLead)
 	r.PATCH("/lead-sources/:uuid", h.updateSource)
 	r.DELETE("/lead-sources/:uuid", h.deleteSource)
 }
@@ -121,13 +124,90 @@ func (h *Handler) getLead(c *gin.Context) {
 	if !h.allow(c) {
 		return
 	}
-	result, err := h.svc.GetLead(c.Request.Context(), c.Param("uuid"))
+	result, err := h.svc.GetLeadDetail(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid"))
 	if err != nil {
 		if errors.Is(err, ErrLeadNotFound) {
 			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
 			return
 		}
 		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "读取线索失败")
+		return
+	}
+	httpx.OK(c, result)
+}
+
+// ---- 批次 5：待复核队列 ----
+
+func (h *Handler) listReviewQueue(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	limit := 50
+	if raw := c.Query("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil {
+			limit = n
+		}
+	}
+	items, err := h.svc.ListReviewQueue(c.Request.Context(), c.Query("leadType"), limit)
+	if err != nil {
+		if errors.Is(err, ErrInvalidStatus) {
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+			return
+		}
+		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "加载待复核队列失败")
+		return
+	}
+	httpx.OK(c, gin.H{"items": items})
+}
+
+// ---- 批次 5：复核 ----
+
+func (h *Handler) reviewLead(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	var in ReviewLeadInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	result, err := h.svc.ReviewLead(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid"), in.Decision)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrLeadNotFound):
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
+		case errors.Is(err, ErrInvalidReview), errors.Is(err, ErrInvalidTransition):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "复核线索失败")
+		}
+		return
+	}
+	httpx.OK(c, result)
+}
+
+// ---- 批次 5：首条联系（100% 人工，禁止自动发送）----
+
+func (h *Handler) contactLead(c *gin.Context) {
+	if !h.allow(c) {
+		return
+	}
+	var in ContactLeadInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	result, err := h.svc.ContactLead(c.Request.Context(), httpx.CurrentAdminID(c), c.Param("uuid"), in)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrLeadNotFound):
+			httpx.Fail(c, http.StatusNotFound, httpx.CodeInvalidArgument, err.Error())
+		case errors.Is(err, ErrHalted), errors.Is(err, ErrOptOutExists),
+			errors.Is(err, ErrInvalidContact), errors.Is(err, ErrInvalidTransition):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "发起联系失败")
+		}
 		return
 	}
 	httpx.OK(c, result)
