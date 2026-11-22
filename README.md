@@ -1,6 +1,6 @@
 # 房屋中介小程序 · 工程
 
-这是《房屋中介小程序/技术方案-v1.3.md》的 M1 可运行实现。
+这是《房屋中介小程序/技术方案-v1.5.md》的 M1 可运行实现。
 
 当前已打通：
 
@@ -25,7 +25,7 @@
 ├── miniprogram/              微信原生小程序（TypeScript）
 ├── admin-web/                React + Vite 管理站
 ├── docker-compose.yml        本地 PostgreSQL 18 + Redis
-└── 技术方案-v1.3.md          方案定稿
+└── 技术方案-v1.5.md          方案定稿
 ```
 
 ## 本地启动
