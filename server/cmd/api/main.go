@@ -24,6 +24,7 @@ import (
 	"housing/internal/importjob"
 	"housing/internal/intake"
 	"housing/internal/modelgw"
+	"housing/internal/notify"
 	"housing/internal/property"
 	"housing/internal/prospect"
 	"housing/internal/secure"
@@ -73,7 +74,7 @@ func main() {
 
 	userRepo := user.NewRepository(pool)
 	userSvc := user.NewService(userRepo, pii, tokens)
-	wxClient := wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret)
+	wxClient := wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret, cfg.WeChatAPIBase)
 	userHandler := user.NewHandler(userSvc, wxClient, cfg.DevLoginEnabled)
 
 	buildingRepo := building.NewRepository(pool)
@@ -136,6 +137,12 @@ func main() {
 	prospectSvc := prospect.NewService(prospectRepo, pii)
 	prospectHandler := prospect.NewHandler(prospectSvc)
 
+	notifyRepo := notify.NewRepository(pool)
+	notifySvc := notify.NewService(notifyRepo, pii,
+		wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret, cfg.WeChatAPIBase),
+		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage, cfg.NotifyFields, cfg.NotifyMaxAttempts)
+	notifyHandler := notify.NewHandler(notifySvc)
+
 	router := httpapi.NewRouter(cfg, log, tokens, adminTokens, httpapi.Handlers{
 		User:            userHandler,
 		Property:        propertyHandler,
@@ -148,6 +155,7 @@ func main() {
 		Intake:          intakeHandler,
 		Admin:           adminHandler,
 		Prospect:        prospectHandler,
+		Notify:          notifyHandler,
 		Media:           mediaSvc,
 		AllowLocalMedia: cfg.Env == "dev",
 	})

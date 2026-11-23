@@ -17,6 +17,7 @@ import (
 	"housing/internal/httpx"
 	"housing/internal/importjob"
 	"housing/internal/intake"
+	"housing/internal/notify"
 	"housing/internal/property"
 	"housing/internal/prospect"
 	"housing/internal/storage"
@@ -35,6 +36,7 @@ type Handlers struct {
 	Intake          *intake.Handler
 	Admin           *admin.Handler
 	Prospect        *prospect.Handler
+	Notify          *notify.Handler
 	Media           *storage.Service
 	AllowLocalMedia bool
 }
@@ -80,6 +82,9 @@ func NewRouter(cfg config.Config, log *slog.Logger, mgr *auth.Manager, adminMgr 
 		}
 		if handlers.Prospect != nil {
 			handlers.Prospect.RegisterAdmin(adminGroup)
+		}
+		if handlers.Notify != nil {
+			handlers.Notify.RegisterAdmin(adminGroup)
 		}
 		if handlers.Community != nil {
 			handlers.Community.RegisterAdmin(adminGroup)

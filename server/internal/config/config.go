@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"housing/internal/notify"
+	"housing/internal/wechat"
 )
 
 // Config is the runtime configuration. Secrets must come from environment
@@ -23,8 +26,10 @@ type Config struct {
 	AdminJWTAccessTTL         time.Duration
 	WeChatAppID               string
 	WeChatSecret              string
+	WeChatAPIBase             string
 	WeChatSubscribeTemplateID string
 	WeChatSubscribePage       string
+	NotifyMaxAttempts         int
 	PIIEncKey                 string
 	PIIHashKey                string
 	DevLoginEnabled           bool
@@ -79,8 +84,10 @@ func Load() (Config, error) {
 		AdminJWTSecret:            os.Getenv("ADMIN_JWT_SECRET"),
 		WeChatAppID:               os.Getenv("WECHAT_APPID"),
 		WeChatSecret:              os.Getenv("WECHAT_SECRET"),
+		WeChatAPIBase:             getenv("WECHAT_API_BASE", wechat.DefaultAPIBase),
 		WeChatSubscribeTemplateID: getenv("WECHAT_SUBSCRIBE_TEMPLATE_ID", ""),
 		WeChatSubscribePage:       getenv("WECHAT_SUBSCRIBE_PAGE", "pages/map/index"),
+		NotifyMaxAttempts:         getenvInt("NOTIFY_MAX_ATTEMPTS", notify.DefaultMaxAttempts),
 		PIIEncKey:                 os.Getenv("PII_ENC_KEY"),
 		PIIHashKey:                os.Getenv("PII_HASH_KEY"),
 		LogLevel:                  getenv("LOG_LEVEL", "info"),
@@ -185,6 +192,15 @@ func boolString(v bool) string {
 func getenv(key, fallback string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func getenvInt(key string, fallback int) int {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
 	return fallback
 }

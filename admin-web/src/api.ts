@@ -871,6 +871,50 @@ export async function markProspectNotificationRead(token: string, id: number): P
   )
 }
 
+export type NotificationOutboxStatus =
+  | 'pending'
+  | 'retrying'
+  | 'sent'
+  | 'failed'
+  | 'not_configured'
+
+export interface NotificationOutboxRecord {
+  id: number
+  eventType: string
+  recipientUserId: number
+  status: NotificationOutboxStatus
+  attempts: number
+  lastError?: string
+  nextRetryAt?: string
+  sentAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export async function fetchProspectNotificationOutbox(
+  token: string,
+  status: NotificationOutboxStatus | '' = '',
+  limit = 50,
+): Promise<NotificationOutboxRecord[]> {
+  const params = new URLSearchParams()
+  if (status) params.set('status', status)
+  params.set('limit', String(limit))
+  const data = await request<{ items: NotificationOutboxRecord[] }>(
+    `/v1/admin/prospects/notification-outbox?${params.toString()}`,
+    {},
+    token,
+  )
+  return data.items
+}
+
+export async function retryProspectNotificationOutbox(token: string, id: number): Promise<void> {
+  await request<{ retried: boolean }>(
+    `/v1/admin/prospects/notification-outbox/${id}/retry`,
+    { method: 'POST', body: '{}' },
+    token,
+  )
+}
+
 export async function fetchOptOuts(
   token: string,
   leadType: LeadType | '' = '',

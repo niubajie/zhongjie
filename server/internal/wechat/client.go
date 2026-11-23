@@ -9,13 +9,18 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
 
+// DefaultAPIBase 微信小程序接口默认地址；测试或私有代理可通过 WECHAT_API_BASE 覆盖。
+const DefaultAPIBase = "https://api.weixin.qq.com"
+
 type Client struct {
 	appID      string
 	appSecret  string
+	base       string
 	httpClient *http.Client
 
 	mu          sync.Mutex
@@ -23,10 +28,15 @@ type Client struct {
 	expiresAt   time.Time
 }
 
-func NewClient(appID, appSecret string) *Client {
+func NewClient(appID, appSecret, base string) *Client {
+	base = strings.TrimRight(strings.TrimSpace(base), "/")
+	if base == "" {
+		base = DefaultAPIBase
+	}
 	return &Client{
 		appID:      appID,
 		appSecret:  appSecret,
+		base:       base,
 		httpClient: &http.Client{Timeout: 6 * time.Second},
 	}
 }
@@ -54,7 +64,7 @@ func (c *Client) Code2Session(ctx context.Context, code string) (openID, unionID
 	q.Set("grant_type", "authorization_code")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"https://api.weixin.qq.com/sns/jscode2session?"+q.Encode(), nil)
+		c.base+"/sns/jscode2session?"+q.Encode(), nil)
 	if err != nil {
 		return "", "", err
 	}
@@ -94,7 +104,7 @@ func (c *Client) GetPhoneNumber(ctx context.Context, code string) (string, error
 	}
 	body, _ := json.Marshal(map[string]string{"code": code})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.weixin.qq.com/wxa/business/getuserphonenumber?access_token="+url.QueryEscape(token),
+		c.base+"/wxa/business/getuserphonenumber?access_token="+url.QueryEscape(token),
 		bytes.NewReader(body))
 	if err != nil {
 		return "", err
@@ -139,7 +149,7 @@ func (c *Client) SendSubscribeMessage(ctx context.Context, openID, templateID, p
 	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		"https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token="+url.QueryEscape(token),
+		c.base+"/cgi-bin/message/subscribe/send?access_token="+url.QueryEscape(token),
 		bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -174,7 +184,7 @@ func (c *Client) getAccessToken(ctx context.Context) (string, error) {
 	q.Set("appid", c.appID)
 	q.Set("secret", c.appSecret)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
-		"https://api.weixin.qq.com/cgi-bin/token?"+q.Encode(), nil)
+		c.base+"/cgi-bin/token?"+q.Encode(), nil)
 	if err != nil {
 		return "", err
 	}

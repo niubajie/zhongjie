@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.18.0
+  version: 0.19.0
   description: |
     覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
     小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
@@ -1294,6 +1294,46 @@ paths:
       responses:
         "200":
           description: 已标记
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/prospects/notification-outbox:
+    get:
+      tags: [prospect]
+      summary: 微信模板外发记录（批次17，失败按退避重试，可查看状态与最后错误）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, retrying, sent, failed, not_configured]
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50, minimum: 1, maximum: 200}
+      responses:
+        "200":
+          description: 外发记录列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationOutboxListEnvelope"
+  /v1/admin/prospects/notification-outbox/{id}/retry:
+    post:
+      tags: [prospect]
+      summary: 手动重试失败或未配置的外发记录（批次17，写入审计）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        "200":
+          description: 已重置为待发送
           content:
             application/json:
               schema:
@@ -2772,6 +2812,34 @@ components:
           items:
             $ref: "#/components/schemas/AdminNotification"
         unread: {type: integer}
+    NotificationOutboxRecord:
+      type: object
+      properties:
+        id: {type: integer}
+        eventType: {type: string}
+        recipientUserId: {type: integer}
+        status: {type: string, enum: [pending, retrying, sent, failed, not_configured]}
+        attempts: {type: integer}
+        lastError: {type: string}
+        nextRetryAt: {type: string}
+        sentAt: {type: string}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+    NotificationOutboxListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationOutboxRecord"
+    NotificationOutboxListEnvelope:
+      type: object
+      properties:
+        code: {type: integer}
+        message: {type: string}
+        data:
+          $ref: "#/components/schemas/NotificationOutboxListData"
+        traceId: {type: string}
     AdminNotificationListEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"

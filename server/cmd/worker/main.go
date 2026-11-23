@@ -40,8 +40,9 @@ func main() {
 	}
 	freshRepo := freshness.NewRepository(pool)
 	notifyRepo := notify.NewRepository(pool)
-	notifySvc := notify.NewService(notifyRepo, pii, wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret),
-		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage, cfg.NotifyFields)
+	notifySvc := notify.NewService(notifyRepo, pii,
+		wechat.NewClient(cfg.WeChatAppID, cfg.WeChatSecret, cfg.WeChatAPIBase),
+		cfg.WeChatSubscribeTemplateID, cfg.WeChatSubscribePage, cfg.NotifyFields, cfg.NotifyMaxAttempts)
 	prospectRepo := prospect.NewRepository(pool)
 	prospectSvc := prospect.NewService(prospectRepo, pii)
 	prospectSvc.SetReminderNotifier(notifyRepo, cfg.AdminNotifyUserID)
@@ -70,9 +71,9 @@ func main() {
 			log.Printf("notification run failed: %v", err)
 			return
 		}
-		if result.Sent+result.Failed+result.NotConfigured > 0 {
-			log.Printf("notification run: sent=%d failed=%d notConfigured=%d",
-				result.Sent, result.Failed, result.NotConfigured)
+		if result.Sent+result.Retrying+result.Dead+result.NotConfigured > 0 {
+			log.Printf("notification run: sent=%d retrying=%d dead=%d notConfigured=%d",
+				result.Sent, result.Retrying, result.Dead, result.NotConfigured)
 		}
 	}
 

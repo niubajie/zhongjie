@@ -10,6 +10,7 @@ import {
   fetchOptOuts,
   fetchProspectAuditLogs,
   fetchProspectDetail,
+  fetchProspectNotificationOutbox,
   fetchProspectNotifications,
   fetchProspectReminders,
   batchProspectLeads,
@@ -20,6 +21,7 @@ import {
   fetchReviewQueue,
   markProspectNotificationRead,
   optOutProspect,
+  retryProspectNotificationOutbox,
   reviewProspect,
   setKillSwitch,
   setLeadSourceEnabled,
@@ -33,6 +35,8 @@ import {
   type LeadSource,
   type LeadSourceKind,
   type LeadType,
+  type NotificationOutboxRecord,
+  type NotificationOutboxStatus,
   type OptOut,
   type ProspectAuditLog,
   type ProspectBatchActionType,
@@ -116,6 +120,14 @@ const NOTIFICATION_LEVEL_LABEL: Record<AdminNotification['level'], string> = {
   due_3d: '3 天待跟进',
   overdue_7d: '7 天超期',
   error: '采集失败',
+}
+
+const OUTBOX_STATUS_LABEL: Record<NotificationOutboxStatus, string> = {
+  pending: '待发送',
+  retrying: '重试中',
+  sent: '已发送',
+  failed: '失败',
+  not_configured: '未配置',
 }
 
 const INTENT_ORDER: ProspectIntentStatus[] = [
@@ -342,6 +354,12 @@ export default function Prospecting({ token }: { token: string }) {
   const [notificationsError, setNotificationsError] = useState('')
   const [notificationsBusy, setNotificationsBusy] = useState(false)
 
+  const [outboxStatus, setOutboxStatus] = useState<NotificationOutboxStatus | ''>('')
+  const [outbox, setOutbox] = useState<NotificationOutboxRecord[]>([])
+  const [outboxLoading, setOutboxLoading] = useState(true)
+  const [outboxError, setOutboxError] = useState('')
+  const [outboxBusy, setOutboxBusy] = useState(false)
+
   const [stats, setStats] = useState<ProspectStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
   const [statsError, setStatsError] = useState('')
@@ -564,6 +582,31 @@ export default function Prospecting({ token }: { token: string }) {
 
   useEffect(() => {
     let cancelled = false
+    setOutboxLoading(true)
+    fetchProspectNotificationOutbox(token, outboxStatus)
+      .then((items) => {
+        if (!cancelled) {
+          setOutbox(items)
+          setOutboxError('')
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setOutboxError(err.message || '外发记录加载失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setOutboxLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, outboxStatus])
+
+  useEffect(() => {
+    let cancelled = false
     setStatsLoading(true)
     fetchProspectStats(token)
       .then((data) => {
@@ -767,6 +810,23 @@ export default function Prospecting({ token }: { token: string }) {
       .then(() => refreshNotifications())
       .catch((err: Error) => setNotificationsError(err.message || '标记已读失败'))
       .finally(() => setNotificationsBusy(false))
+  }
+
+  function refreshOutbox() {
+    return fetchProspectNotificationOutbox(token, outboxStatus)
+      .then((items) => {
+        setOutbox(items)
+        setOutboxError('')
+      })
+      .catch((err: Error) => setOutboxError(err.message || '外发记录加载失败'))
+  }
+
+  function retryOutbox(id: number) {
+    setOutboxBusy(true)
+    retryProspectNotificationOutbox(token, id)
+      .then(() => refreshOutbox())
+      .catch((err: Error) => setOutboxError(err.message || '重试外发记录失败'))
+      .finally(() => setOutboxBusy(false))
   }
 
   function submitAuditFilter(event: FormEvent<HTMLFormElement>) {
@@ -1715,6 +1775,97 @@ export default function Prospecting({ token }: { token: string }) {
               <tr>
                 <td colSpan={7} className="empty">
                   暂无站内通知
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="sub-head">微信模板外发记录</h3>
+      <p className="muted">
+        发送失败会按 5/10/20/40/60 分钟自动重试，达到上限转为失败；失败或未配置的记录可手动重试。
+      </p>
+      <div className="prospect-toolbar">
+        <select
+          value={outboxStatus}
+          onChange={(e) => setOutboxStatus(e.target.value as NotificationOutboxStatus | '')}
+        >
+          <option value="">全部状态</option>
+          {(Object.keys(OUTBOX_STATUS_LABEL) as NotificationOutboxStatus[]).map((status) => (
+            <option key={status} value={status}>
+              {OUTBOX_STATUS_LABEL[status]}
+            </option>
+          ))}
+        </select>
+        <button className="btn secondary" onClick={() => refreshOutbox()} disabled={outboxLoading}>
+          刷新
+        </button>
+        <span className="muted">{outboxLoading ? '加载中…' : `共 ${outbox.length} 条`}</span>
+      </div>
+      {outboxError && <div className="alert">{outboxError}</div>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>事件</th>
+              <th>收件人</th>
+              <th>状态</th>
+              <th>尝试</th>
+              <th>最后错误</th>
+              <th>发送时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {outbox.map((item) => (
+              <tr key={item.id}>
+                <td>{item.id}</td>
+                <td>{item.eventType}</td>
+                <td>{item.recipientUserId}</td>
+                <td>
+                  <span
+                    className={`status ${
+                      item.status === 'failed' || item.status === 'not_configured'
+                        ? 'status-stale'
+                        : item.status === 'retrying'
+                          ? 'status-pending'
+                          : ''
+                    }`}
+                  >
+                    {OUTBOX_STATUS_LABEL[item.status]}
+                  </span>
+                </td>
+                <td>{item.attempts}</td>
+                <td>{item.lastError || '—'}</td>
+                <td>{item.sentAt || '—'}</td>
+                <td>
+                  {item.status === 'failed' || item.status === 'not_configured' ? (
+                    <button
+                      className="table-action"
+                      onClick={() => retryOutbox(item.id)}
+                      disabled={outboxBusy}
+                    >
+                      重试
+                    </button>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {outboxLoading && (
+              <tr>
+                <td colSpan={8} className="empty">
+                  加载中…
+                </td>
+              </tr>
+            )}
+            {!outboxLoading && outbox.length === 0 && (
+              <tr>
+                <td colSpan={8} className="empty">
+                  暂无外发记录
                 </td>
               </tr>
             )}
