@@ -18,6 +18,7 @@ import (
 const (
 	AdminEventFollowUpDue     = "prospect_followup_due"
 	AdminEventFollowUpOverdue = "prospect_followup_overdue"
+	AdminEventCollectFailed   = "prospect_collect_failed"
 
 	adminNotificationUnread = "unread"
 )
@@ -81,6 +82,23 @@ func (r *Repository) CreateAdminNotifications(ctx context.Context, reminderID, l
 	`, eventType, level, title, body, leadID, reminderID)
 	if err != nil {
 		return 0, fmt.Errorf("create admin notifications: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
+// CreateCollectFailureNotifications 向活跃管理员分发采集失败告警。
+// 同一采集运行记录对每个管理员最多一条，重复调用安全。
+func (r *Repository) CreateCollectFailureNotifications(ctx context.Context, collectRunID int64, title, body string) (int64, error) {
+	tag, err := r.pool.Exec(ctx, `
+		INSERT INTO admin_notifications (admin_id, event_type, level, title, body, collect_run_id)
+		SELECT a.id, $1, 'error', $2, $3, $4
+		FROM admin_users a
+		WHERE a.deleted_at IS NULL AND a.status = 'active'
+		  AND a.role IN ('super_admin', 'operations')
+		ON CONFLICT (admin_id, collect_run_id) WHERE collect_run_id IS NOT NULL DO NOTHING
+	`, AdminEventCollectFailed, title, body, collectRunID)
+	if err != nil {
+		return 0, fmt.Errorf("create collect failure notifications: %w", err)
 	}
 	return tag.RowsAffected(), nil
 }

@@ -21,7 +21,8 @@ type LeadStore interface {
 	OptOutExists(ctx context.Context, contactHash []byte, leadType string) (bool, error)
 	LeadExistsByContactHash(ctx context.Context, contactHash []byte, leadType string) (bool, error)
 	CreateLead(ctx context.Context, lead ProspectLead, rawTextEnc, contactHash []byte) (int64, string, error)
-	RecordCollectResult(ctx context.Context, sourceID int64, success bool, startedAt, nextAt time.Time, stats CollectRunStats, errMsg string) error
+	RecordCollectResult(ctx context.Context, sourceID int64, success bool, startedAt, nextAt time.Time, stats CollectRunStats, errMsg string) (CollectResult, error)
+	CreateCollectFailureNotifications(ctx context.Context, collectRunID int64, title, body string) (int64, error)
 }
 
 // RunStats 一轮采集的统计，便于日志与后续可观测性。
@@ -33,8 +34,9 @@ type RunStats struct {
 
 // 失败退避：首次失败 5 分钟后重试，按 5/10/20/40/60 递增，不超过采集间隔。
 const (
-	collectRetryBase = 5 * time.Minute
-	collectRetryMax  = 60 * time.Minute
+	collectRetryBase             = 5 * time.Minute
+	collectRetryMax              = 60 * time.Minute
+	collectFailureAlertThreshold = 3
 )
 
 // Ingestor 负责一轮采集：逐源拉取并入库。
@@ -135,14 +137,22 @@ func (i *Ingestor) RunDue(ctx context.Context, now time.Time) (RunStats, error) 
 			stats.Failed++
 			i.logf("prospect: 采集失败 source=%s: %v", source.Name, runErr)
 			next := nextCollectAt(now, source, false)
-			if err := i.store.RecordCollectResult(ctx, source.ID, false, now, next, st, runErr.Error()); err != nil {
+			result, err := i.store.RecordCollectResult(ctx, source.ID, false, now, next, st, runErr.Error())
+			if err != nil {
 				i.logf("prospect: 记录采集失败结果失败 source=%s: %v", source.Name, err)
+				continue
+			}
+			if result.ConsecutiveFailures == collectFailureAlertThreshold {
+				title, body := collectFailureNotification(source, result.ConsecutiveFailures, runErr)
+				if _, err := i.store.CreateCollectFailureNotifications(ctx, result.RunID, title, body); err != nil {
+					i.logf("prospect: 写入采集失败告警失败 source=%s: %v", source.Name, err)
+				}
 			}
 			continue
 		}
 		stats.add(st)
 		next := nextCollectAt(now, source, true)
-		if err := i.store.RecordCollectResult(ctx, source.ID, true, now, next, st, ""); err != nil {
+		if _, err := i.store.RecordCollectResult(ctx, source.ID, true, now, next, st, ""); err != nil {
 			i.logf("prospect: 记录采集结果失败 source=%s: %v", source.Name, err)
 		}
 	}
@@ -156,6 +166,12 @@ func (s *RunStats) add(st CollectRunStats) {
 	s.OptedOut += st.OptedOut
 	s.Invalid += st.Invalid
 	s.Failed += st.Failed
+}
+
+// collectFailureNotification 生成采集告警文案，不包含线索正文或联系方式。
+func collectFailureNotification(source LeadSource, failures int, runErr error) (title, body string) {
+	return "信息源连续采集失败", fmt.Sprintf("信息源「%s」已连续 %d 次采集失败，请检查采集配置。最近错误：%s",
+		source.Name, failures, runErr.Error())
 }
 
 // nextCollectAt 计算下一次采集时间：成功按间隔，失败按指数退避且不超过间隔。

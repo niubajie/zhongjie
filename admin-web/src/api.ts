@@ -396,6 +396,7 @@ export type TransitionStatus =
 export type ContactChannel = 'in_app' | 'sms' | 'wechat' | 'phone'
 export type FollowUpDirection = 'outbound' | 'inbound'
 export type ReminderLevel = 'due_3d' | 'overdue_7d'
+export type NotificationLevel = ReminderLevel | 'error'
 export type ReviewDecision = 'approve' | 'reject'
 
 export interface LeadSource {
@@ -834,8 +835,8 @@ export async function optOutProspect(
 
 export interface AdminNotification {
   id: number
-  eventType: 'prospect_followup_due' | 'prospect_followup_overdue'
-  level: ReminderLevel
+  eventType: 'prospect_followup_due' | 'prospect_followup_overdue' | 'prospect_collect_failed'
+  level: NotificationLevel
   title: string
   body: string
   leadUuid?: string

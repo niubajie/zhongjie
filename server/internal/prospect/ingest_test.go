@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,6 +38,8 @@ type fakeStore struct {
 	created        []createdLead
 	createErr      error
 	collects       []recordedCollect
+	failureCounts  map[int64]int
+	collectAlerts  []collectFailureAlert
 }
 
 type recordedCollect struct {
@@ -60,7 +63,13 @@ func (f *fakeStore) ListDueSources(context.Context, time.Time) ([]LeadSource, er
 	return f.dueSources, nil
 }
 
-func (f *fakeStore) RecordCollectResult(_ context.Context, sourceID int64, success bool, startedAt, nextAt time.Time, stats CollectRunStats, errMsg string) error {
+type collectFailureAlert struct {
+	collectRunID int64
+	title        string
+	body         string
+}
+
+func (f *fakeStore) RecordCollectResult(_ context.Context, sourceID int64, success bool, startedAt, nextAt time.Time, stats CollectRunStats, errMsg string) (CollectResult, error) {
 	f.collects = append(f.collects, recordedCollect{
 		sourceID:  sourceID,
 		success:   success,
@@ -69,7 +78,20 @@ func (f *fakeStore) RecordCollectResult(_ context.Context, sourceID int64, succe
 		stats:     stats,
 		errMsg:    errMsg,
 	})
-	return nil
+	if f.failureCounts == nil {
+		f.failureCounts = map[int64]int{}
+	}
+	if success {
+		f.failureCounts[sourceID] = 0
+	} else {
+		f.failureCounts[sourceID]++
+	}
+	return CollectResult{RunID: int64(len(f.collects)), ConsecutiveFailures: f.failureCounts[sourceID]}, nil
+}
+
+func (f *fakeStore) CreateCollectFailureNotifications(_ context.Context, collectRunID int64, title, body string) (int64, error) {
+	f.collectAlerts = append(f.collectAlerts, collectFailureAlert{collectRunID: collectRunID, title: title, body: body})
+	return 1, nil
 }
 
 func (f *fakeStore) OptOutExists(_ context.Context, hash []byte, leadType string) (bool, error) {
@@ -285,6 +307,50 @@ func TestRunDueBacksOffOnFetchFailure(t *testing.T) {
 	}
 	if want := now.Add(20 * time.Minute); !rec.nextAt.Equal(want) {
 		t.Fatalf("连续第 3 次失败应退避 20 分钟: want %v got %v", want, rec.nextAt)
+	}
+}
+
+func TestRunDueAlertsOnThirdFailureAndAfterRecovery(t *testing.T) {
+	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
+	src := testSource()
+	src.CollectIntervalMinutes = 60
+	store := &fakeStore{halted: "false", dueSources: []LeadSource{src}}
+	fc := &fakeCollector{kind: SourceKindPublicAPI, err: errors.New("boom")}
+	ing := newTestIngestor(t, store, fc)
+
+	for n := 1; n <= 4; n++ {
+		if _, err := ing.RunDue(context.Background(), now); err != nil {
+			t.Fatalf("第 %d 次失败采集: %v", n, err)
+		}
+		wantAlerts := 0
+		if n >= 3 {
+			wantAlerts = 1
+		}
+		if len(store.collectAlerts) != wantAlerts {
+			t.Fatalf("第 %d 次失败后告警数应为 %d，实际 %d", n, wantAlerts, len(store.collectAlerts))
+		}
+	}
+	alert := store.collectAlerts[0]
+	if alert.collectRunID != 3 || alert.title != "信息源连续采集失败" {
+		t.Fatalf("告警内容或关联运行记录错误: %+v", alert)
+	}
+	if !strings.Contains(alert.body, src.Name) || !strings.Contains(alert.body, "连续 3 次") {
+		t.Fatalf("告警应包含来源名称与失败次数: %s", alert.body)
+	}
+
+	// 成功采集清零；之后新一轮连续失败达到阈值时允许再次告警。
+	fc.err = nil
+	if _, err := ing.RunDue(context.Background(), now); err != nil {
+		t.Fatalf("恢复采集: %v", err)
+	}
+	fc.err = errors.New("boom-again")
+	for n := 0; n < 3; n++ {
+		if _, err := ing.RunDue(context.Background(), now); err != nil {
+			t.Fatalf("恢复后第 %d 次失败采集: %v", n+1, err)
+		}
+	}
+	if len(store.collectAlerts) != 2 || store.collectAlerts[1].collectRunID != 8 {
+		t.Fatalf("恢复后新一轮第三次失败应重新告警: %+v", store.collectAlerts)
 	}
 }
 

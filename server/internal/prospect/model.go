@@ -558,6 +558,12 @@ const (
 	CollectStatusFailed  = "failed"
 )
 
+// CollectResult 采集结果落库后的调度状态，用于失败告警判定。
+type CollectResult struct {
+	RunID               int64
+	ConsecutiveFailures int
+}
+
 // CollectRunStats 单次采集尝试的统计，随运行记录一起落库。
 type CollectRunStats struct {
 	Fetched   int

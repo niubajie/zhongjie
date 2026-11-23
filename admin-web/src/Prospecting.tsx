@@ -112,6 +112,12 @@ const REMINDER_LEVEL_LABEL: Record<ReminderLevel, string> = {
   overdue_7d: '7 天超期',
 }
 
+const NOTIFICATION_LEVEL_LABEL: Record<AdminNotification['level'], string> = {
+  due_3d: '3 天待跟进',
+  overdue_7d: '7 天超期',
+  error: '采集失败',
+}
+
 const INTENT_ORDER: ProspectIntentStatus[] = [
   'seeking',
   'rented',
@@ -1632,7 +1638,7 @@ export default function Prospecting({ token }: { token: string }) {
 
       <h3 className="sub-head">站内通知</h3>
       <p className="muted">
-        跟进提醒会按管理员分发站内通知，同一提醒不重复通知；未读 {notificationsUnread} 条。
+        跟进提醒与信息源连续 3 次采集失败告警会按管理员分发，同一提醒或告警不重复通知；未读 {notificationsUnread} 条。
       </p>
       <div className="prospect-toolbar">
         <button
@@ -1669,10 +1675,12 @@ export default function Prospecting({ token }: { token: string }) {
                 <td>
                   <span
                     className={`status ${
-                      item.level === 'overdue_7d' ? 'status-stale' : 'status-pending'
+                      item.level === 'overdue_7d' || item.level === 'error'
+                        ? 'status-stale'
+                        : 'status-pending'
                     }`}
                   >
-                    {REMINDER_LEVEL_LABEL[item.level]}
+                    {NOTIFICATION_LEVEL_LABEL[item.level]}
                   </span>
                 </td>
                 <td>

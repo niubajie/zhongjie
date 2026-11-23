@@ -462,12 +462,14 @@ func (r *Repository) ListDueSources(ctx context.Context, now time.Time) ([]LeadS
 }
 
 // RecordCollectResult 原子更新信息源调度状态并写入一条采集运行记录。
-func (r *Repository) RecordCollectResult(ctx context.Context, sourceID int64, success bool, startedAt, nextAt time.Time, st CollectRunStats, errMsg string) error {
+// 返回运行记录 ID 与数据库实际连续失败次数，供告警判定使用。
+func (r *Repository) RecordCollectResult(ctx context.Context, sourceID int64, success bool, startedAt, nextAt time.Time, st CollectRunStats, errMsg string) (CollectResult, error) {
 	status := CollectStatusSuccess
 	if !success {
 		status = CollectStatusFailed
 	}
-	_, err := r.pool.Exec(ctx, `
+	var result CollectResult
+	err := r.pool.QueryRow(ctx, `
 		WITH upd AS (
 			UPDATE lead_sources
 			SET last_collected_at = $2,
@@ -477,19 +479,22 @@ func (r *Repository) RecordCollectResult(ctx context.Context, sourceID int64, su
 			    last_error_at = CASE WHEN $4::boolean THEN NULL ELSE now() END,
 			    updated_at = now()
 			WHERE id = $1
+			RETURNING id, consecutive_failures
+		), ins AS (
+			INSERT INTO prospect_collect_runs (
+				source_id, status, fetched, ingested, duplicate, opted_out, invalid, failed,
+				error_message, started_at, finished_at
+			)
+			SELECT id, $6, $7, $8, $9, $10, $11, $12, NULLIF($5, ''), $2, now() FROM upd
 			RETURNING id
 		)
-		INSERT INTO prospect_collect_runs (
-			source_id, status, fetched, ingested, duplicate, opted_out, invalid, failed,
-			error_message, started_at, finished_at
-		)
-		SELECT id, $6, $7, $8, $9, $10, $11, $12, NULLIF($5, ''), $2, now() FROM upd
+		SELECT ins.id, upd.consecutive_failures FROM ins, upd
 	`, sourceID, startedAt, nextAt, success, errMsg, status,
-		st.Fetched, st.Ingested, st.Duplicate, st.OptedOut, st.Invalid, st.Failed)
+		st.Fetched, st.Ingested, st.Duplicate, st.OptedOut, st.Invalid, st.Failed).Scan(&result.RunID, &result.ConsecutiveFailures)
 	if err != nil {
-		return fmt.Errorf("record collect result: %w", err)
+		return CollectResult{}, fmt.Errorf("record collect result: %w", err)
 	}
-	return nil
+	return result, nil
 }
 
 // ListCollectRuns 采集运行记录列表，可按信息源 UUID 过滤。
