@@ -6,6 +6,7 @@ export interface AdminUser {
   uuid: string
   username: string
   role: string
+  totpEnabled: boolean
 }
 
 export interface AdminLoginResult {
@@ -285,10 +286,13 @@ export async function moderateProperty(
   return data.status
 }
 
-export async function setupTOTP(token: string): Promise<{ secret: string; otpauthUrl: string }> {
+export async function setupTOTP(
+  token: string,
+  code = '',
+): Promise<{ secret: string; otpauthUrl: string }> {
   return request<{ secret: string; otpauthUrl: string }>(
     '/v1/admin/auth/totp/setup',
-    { method: 'POST', body: '{}' },
+    { method: 'POST', body: JSON.stringify({ code }) },
     token,
   )
 }
@@ -296,6 +300,15 @@ export async function setupTOTP(token: string): Promise<{ secret: string; otpaut
 export async function enableTOTP(token: string, code: string): Promise<boolean> {
   const data = await request<{ enabled: boolean }>(
     '/v1/admin/auth/totp/enable',
+    { method: 'POST', body: JSON.stringify({ code }) },
+    token,
+  )
+  return data.enabled
+}
+
+export async function disableTOTP(token: string, code: string): Promise<boolean> {
+  const data = await request<{ enabled: boolean }>(
+    '/v1/admin/auth/totp/disable',
     { method: 'POST', body: JSON.stringify({ code }) },
     token,
   )

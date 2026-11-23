@@ -588,7 +588,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminLoginEnvelope"
         "401":
-          description: 用户名/密码错误或需要 TOTP
+          description: 用户名/密码错误或需要 TOTP（code=90003 表示需补动态验证码）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 账号已禁用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          description: 连续登录失败触发锁定（15 分钟）
           content:
             application/json:
               schema:
@@ -833,15 +845,38 @@ paths:
     post:
       tags: [admin]
       summary: 生成 TOTP 密钥
+      description: 已开启 TOTP 时重新绑定必须先传当前动态验证码。
       security:
         - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: 已开启 TOTP 时为必填
       responses:
         "200":
           description: secret 与 otpauth URL
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Envelope"
+                $ref: "#/components/schemas/TOTPSetupEnvelope"
+        "400":
+          description: 已开启 TOTP 但当前验证码缺失或不正确
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 未登录或登录已过期
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/auth/totp/enable:
     post:
       tags: [admin]
@@ -863,11 +898,18 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Envelope"
+                $ref: "#/components/schemas/TOTPStateEnvelope"
+        "400":
+          description: 验证码不正确或尚未生成密钥
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/auth/totp/disable:
     post:
       tags: [admin]
       summary: 关闭 TOTP
+      description: 关闭时清除密钥，重新开启需重新绑定。
       security:
         - bearerAuth: []
       requestBody:
@@ -885,7 +927,13 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Envelope"
+                $ref: "#/components/schemas/TOTPStateEnvelope"
+        "400":
+          description: 动态验证码不正确
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/rentals/intake/text:
     post:
       tags: [intake]
@@ -2105,6 +2153,7 @@ components:
         uuid: {type: string, format: uuid}
         username: {type: string}
         role: {type: string, enum: [super_admin, operations, reviewer, support, auditor]}
+        totpEnabled: {type: boolean, description: 是否已开启 TOTP 二次验证}
     AdminLoginResult:
       type: object
       properties:
@@ -2126,6 +2175,29 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/AdminUser"
+    TOTPSetupResult:
+      type: object
+      properties:
+        secret: {type: string, description: Base32 密钥，仅本次返回}
+        otpauthUrl: {type: string, description: 验证器可识别的 otpauth URL}
+    TOTPSetupEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/TOTPSetupResult"
+    TOTPState:
+      type: object
+      properties:
+        enabled: {type: boolean}
+    TOTPStateEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/TOTPState"
     AdminStats:
       type: object
       properties:

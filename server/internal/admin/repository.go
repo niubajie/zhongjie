@@ -125,6 +125,16 @@ func (r *Repository) SetTOTPEnabled(ctx context.Context, adminID int64, enabled 
 	return nil
 }
 
+// ClearTOTP 关闭 TOTP 并清除密钥，重新开启需重新绑定。
+func (r *Repository) ClearTOTP(ctx context.Context, adminID int64) error {
+	if _, err := r.pool.Exec(ctx, `
+		UPDATE admin_users SET totp_enabled = false, totp_secret_enc = NULL WHERE id = $1
+	`, adminID); err != nil {
+		return fmt.Errorf("clear totp: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) ModerateProperty(ctx context.Context, uuid, action, reason string) (string, error) {
 	var status string
 	switch action {
