@@ -7,6 +7,7 @@ import {
   matchIntakeLandlord,
   publishIntake,
   enableTOTP,
+  disableTOTP,
   fetchAdminAuditLogs,
   fetchAdminBuildings,
   fetchAdminContactDetail,
@@ -34,6 +35,7 @@ import {
   type AdminStats,
   type CommunitySuggestion,
 } from './api'
+import Prospecting from './Prospecting'
 
 type Session = Pick<AdminLoginResult, 'token' | 'admin'>
 
@@ -41,6 +43,7 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
   const [username, setUsername] = useState('admin')
   const [password, setPassword] = useState('')
   const [totpCode, setTotpCode] = useState('')
+  const [totpRequired, setTotpRequired] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -50,7 +53,14 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
     setLoading(true)
     adminLogin(username.trim(), password, totpCode.trim())
       .then((result) => onLogin({ token: result.token, admin: result.admin }))
-      .catch((err: Error) => setError(err.message || '登录失败'))
+      .catch((err: Error) => {
+        const message = err.message || '登录失败'
+        // 服务端返回“需要动态验证码”时再展示输入框，避免首次登录打扰。
+        if (message.includes('动态验证码')) {
+          setTotpRequired(true)
+        }
+        setError(message)
+      })
       .finally(() => setLoading(false))
   }
 
@@ -80,15 +90,19 @@ function Login({ onLogin }: { onLogin: (session: Session) => void }) {
               placeholder="开发种子：Admin123!"
             />
           </label>
-          <label>
-            动态验证码（如已开启 TOTP）
-            <input
-              value={totpCode}
-              onChange={(e) => setTotpCode(e.target.value)}
-              inputMode="numeric"
-              placeholder="可留空"
-            />
-          </label>
+          {totpRequired && (
+            <label>
+              动态验证码
+              <input
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value)}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="输入 6 位验证码"
+                autoFocus
+              />
+            </label>
+          )}
           {error && <p className="form-error">{error}</p>}
           <button className="btn primary" type="submit" disabled={loading}>
             {loading ? '登录中…' : '登录'}
@@ -111,6 +125,8 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   const [totpSecret, setTotpSecret] = useState('')
   const [totpURL, setTotpURL] = useState('')
   const [totpCode, setTotpCode] = useState('')
+  const [totpEnabled, setTotpEnabled] = useState(session.admin.totpEnabled)
+  const [disableCode, setDisableCode] = useState('')
   const [totpMessage, setTotpMessage] = useState('')
   const [intakeText, setIntakeText] = useState('')
   const [intakePhone, setIntakePhone] = useState('')
@@ -153,7 +169,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    Promise.all([
+    Promise.allSettled([
       fetchAdminStats(session.token),
       fetchAdminProperties(session.token),
       fetchAdminImports(session.token),
@@ -163,34 +179,22 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
       fetchAdminIntakeDrafts(session.token),
       fetchAdminAuditLogs(session.token),
     ])
-      .then(
-        ([
-          nextStats,
-          nextProperties,
-          nextImports,
-          nextBuildings,
-          nextContacts,
-          nextFreshness,
-          nextDrafts,
-          nextAuditLogs,
-        ]) => {
-          if (!cancelled) {
-            setStats(nextStats)
-            setProperties(nextProperties)
-            setImports(nextImports)
-            setBuildings(nextBuildings)
-            setContacts(nextContacts)
-            setFreshness(nextFreshness)
-            setDrafts(nextDrafts)
-            setAuditLogs(nextAuditLogs)
-            setError('')
-          }
-        },
-      )
-      .catch((err: Error) => {
-        if (!cancelled) {
-          setError(err.message || '数据加载失败')
+      .then((results) => {
+        if (cancelled) {
+          return
         }
+        const [statsR, propertiesR, importsR, buildingsR, contactsR, freshnessR, draftsR, auditR] =
+          results
+        if (statsR.status === 'fulfilled') setStats(statsR.value)
+        if (propertiesR.status === 'fulfilled') setProperties(propertiesR.value)
+        if (importsR.status === 'fulfilled') setImports(importsR.value)
+        if (buildingsR.status === 'fulfilled') setBuildings(buildingsR.value)
+        if (contactsR.status === 'fulfilled') setContacts(contactsR.value)
+        if (freshnessR.status === 'fulfilled') setFreshness(freshnessR.value)
+        if (draftsR.status === 'fulfilled') setDrafts(draftsR.value)
+        if (auditR.status === 'fulfilled') setAuditLogs(auditR.value)
+        const failed = results.filter((result) => result.status === 'rejected')
+        setError(failed.length > 0 ? `${failed.length} 个区块加载失败，其余数据仍可查看` : '')
       })
       .finally(() => {
         if (!cancelled) {
@@ -411,9 +415,22 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
         setTotpSecret('')
         setTotpURL('')
         setTotpCode('')
+        setTotpEnabled(true)
         setTotpMessage('TOTP 已启用，下次登录需要动态验证码。')
       })
       .catch((err: Error) => setTotpMessage(err.message || '启用失败'))
+  }
+
+  function closeTOTP() {
+    disableTOTP(session.token, disableCode.trim())
+      .then(() => {
+        setDisableCode('')
+        setTotpSecret('')
+        setTotpURL('')
+        setTotpEnabled(false)
+        setTotpMessage('TOTP 已关闭，密钥已清除；重新开启需重新绑定。')
+      })
+      .catch((err: Error) => setTotpMessage(err.message || '关闭失败'))
   }
 
   return (
@@ -431,6 +448,7 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
             控制台
           </a>
           <a href="#properties">房源</a>
+          <a href="#prospecting">自主获客</a>
           <a href="#audit">审计</a>
         </nav>
         <div className="sidebar-foot">
@@ -776,6 +794,8 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
           </div>
         </section>
 
+        <Prospecting token={session.token} />
+
         <section className="panel" id="imports">
           <h2>导入任务</h2>
           <div className="table-wrap">
@@ -931,7 +951,8 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
             <li>管理员 token 与租客 token 使用不同 secret + issuer，互不通用</li>
             <li>登录成功写入 audit_logs（admin_login）</li>
             <li>管理接口走 RequireAdmin 中间件</li>
-            <li>TOTP 已支持绑定与登录校验</li>
+            <li>TOTP 已支持绑定、登录校验与关闭（关闭后密钥清除）</li>
+            <li>登录连续失败 5 次锁定 15 分钟，抵御密码与验证码爆破</li>
           </ul>
           <h3 className="sub-head">审计日志</h3>
           <div className="table-wrap">
@@ -967,7 +988,10 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
             </table>
           </div>
           <div className="totp-box">
-            {!totpSecret && (
+            <p className="muted">
+              当前状态：{totpEnabled ? '已开启（登录需动态验证码）' : '未开启'}
+            </p>
+            {!totpEnabled && !totpSecret && (
               <button className="btn secondary" onClick={beginTOTP}>
                 设置动态验证码
               </button>
@@ -991,6 +1015,19 @@ function Dashboard({ session, onLogout }: { session: Session; onLogout: () => vo
                   </button>
                 </div>
               </>
+            )}
+            {totpEnabled && (
+              <div className="totp-row">
+                <input
+                  value={disableCode}
+                  onChange={(e) => setDisableCode(e.target.value)}
+                  placeholder="输入 6 位验证码后关闭"
+                  inputMode="numeric"
+                />
+                <button className="btn secondary" onClick={closeTOTP}>
+                  关闭动态验证码
+                </button>
+              </div>
             )}
             {totpMessage && <p className="muted">{totpMessage}</p>}
           </div>

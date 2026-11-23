@@ -24,3 +24,6 @@ Thumbs.db
 
 # Local data
 *.log
+server/.staticcheck/
+server/.tmp/
+server/coverage

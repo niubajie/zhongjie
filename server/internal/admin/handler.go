@@ -2,6 +2,7 @@ package admin
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -63,6 +64,8 @@ func (h *Handler) login(c *gin.Context) {
 			httpx.Fail(c, http.StatusUnauthorized, httpx.CodeAdminTOTPRequired, err.Error())
 		case errors.Is(err, ErrTOTPInvalid):
 			httpx.Fail(c, http.StatusUnauthorized, httpx.CodeAdminCredentials, err.Error())
+		case errors.Is(err, ErrLoginLocked):
+			httpx.Fail(c, http.StatusTooManyRequests, httpx.CodeRateLimited, err.Error())
 		default:
 			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "登录失败")
 		}
@@ -100,9 +103,21 @@ func (h *Handler) setupTOTP(c *gin.Context) {
 		httpx.Fail(c, http.StatusUnauthorized, httpx.CodeAdminUnauthorized, "请先登录")
 		return
 	}
-	secret, url, err := h.svc.SetupTOTP(c.Request.Context(), id)
+	var req totpRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, "请求参数不正确")
+		return
+	}
+	secret, url, err := h.svc.SetupTOTP(c.Request.Context(), id, req.Code)
 	if err != nil {
-		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "生成动态验证码失败")
+		switch {
+		case errors.Is(err, ErrTOTPRequired):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeAdminTOTPRequired, "需要当前动态验证码")
+		case errors.Is(err, ErrTOTPInvalid):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeAdminCredentials, "动态验证码不正确")
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "生成动态验证码失败")
+		}
 		return
 	}
 	httpx.OK(c, gin.H{"secret": secret, "otpauthUrl": url})
@@ -120,11 +135,14 @@ func (h *Handler) enableTOTP(c *gin.Context) {
 		return
 	}
 	if err := h.svc.EnableTOTP(c.Request.Context(), id, req.Code); err != nil {
-		if errors.Is(err, ErrTOTPInvalid) {
+		switch {
+		case errors.Is(err, ErrTOTPInvalid):
 			httpx.Fail(c, http.StatusBadRequest, httpx.CodeAdminCredentials, "动态验证码不正确")
-			return
+		case errors.Is(err, ErrTOTPSetupRequired):
+			httpx.Fail(c, http.StatusBadRequest, httpx.CodeInvalidArgument, err.Error())
+		default:
+			httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "启用 TOTP 失败")
 		}
-		httpx.Fail(c, http.StatusInternalServerError, httpx.CodeInternal, "启用 TOTP 失败")
 		return
 	}
 	httpx.OK(c, gin.H{"enabled": true})

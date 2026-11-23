@@ -15,9 +15,10 @@ type Admin struct {
 }
 
 type PublicAdmin struct {
-	UUID     string `json:"uuid"`
-	Username string `json:"username"`
-	Role     string `json:"role"`
+	UUID        string `json:"uuid"`
+	Username    string `json:"username"`
+	Role        string `json:"role"`
+	TOTPEnabled bool   `json:"totpEnabled"`
 }
 
 type LoginResult struct {
@@ -110,5 +111,5 @@ type FreshnessRow struct {
 }
 
 func (a Admin) Public() PublicAdmin {
-	return PublicAdmin{UUID: a.UUID, Username: a.Username, Role: a.Role}
+	return PublicAdmin{UUID: a.UUID, Username: a.Username, Role: a.Role, TOTPEnabled: a.TOTPEnabled}
 }

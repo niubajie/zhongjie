@@ -117,6 +117,7 @@ export interface CreatedProperty {
 
 export interface AssistantSession {
   sessionId: string
+  voiceToken: string
   slots: Record<string, string | number | boolean>
 }
 

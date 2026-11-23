@@ -1,8 +1,9 @@
 package assistant
 
 type Session struct {
-	UUID  string         `json:"sessionId"`
-	Slots map[string]any `json:"slots"`
+	UUID       string         `json:"sessionId"`
+	VoiceToken string         `json:"voiceToken"`
+	Slots      map[string]any `json:"slots"`
 }
 
 type MessageInput struct {

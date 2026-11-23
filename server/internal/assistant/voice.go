@@ -163,6 +163,10 @@ func (h *Handler) voiceSocket(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": httpx.CodeInvalidArgument, "message": "缺少 sessionId"})
 		return
 	}
+	if !h.svc.ValidateVoiceToken(sessionID, strings.TrimSpace(c.Query("token"))) {
+		c.JSON(http.StatusForbidden, gin.H{"code": httpx.CodeForbidden, "message": "语音会话凭证无效"})
+		return
+	}
 	if _, err := h.svc.repo.GetSession(c.Request.Context(), sessionID); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"code": httpx.CodeInvalidArgument, "message": "会话不存在或已过期"})
 		return
@@ -179,7 +183,7 @@ func (h *Handler) voiceSocket(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 	var turnMu sync.Mutex
 	var turnCancel context.CancelFunc

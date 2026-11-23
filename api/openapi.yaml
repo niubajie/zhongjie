@@ -1,8 +1,13 @@
 openapi: 3.1.0
 info:
   title: 房屋中介小程序 API
-  version: 0.1.0
-  description: M1 最小契约：微信登录、资料、地图聚合、房源详情。
+  version: 0.19.0
+  description: |
+    覆盖 M1–M7 已实现接口：微信登录、资料、地图聚合、房源详情/发布、
+    小区联想、联系请求与通知、30 天巡检、小亿文字/语音（准双工 + 打断）、
+    docx/xlsx 导入、管理站文字/图片/视频录入并匹配房东、管理站审核/审计/统计。
+    自主获客（3.12/3.13）已开始落地：批次 1 数据模型与管理站骨架（信息源 / 线索列表）已就绪，
+    采集、LLM 评分、人工复核联系、跟进状态机在后续批次补齐；PC 微信自动化（3.11）尚未实现。
 servers:
   - url: http://localhost:8080
     description: local
@@ -10,8 +15,13 @@ tags:
   - name: auth
   - name: user
   - name: property
-  - name: admin
+  - name: community
+  - name: contact
   - name: assistant
+  - name: voice
+  - name: admin
+  - name: intake
+  - name: prospect
 paths:
   /healthz:
     get:
@@ -117,6 +127,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserEnvelope"
+  /v1/communities/suggest:
+    get:
+      tags: [community]
+      summary: 住宅小区联想（发布/录入时选择小区）
+      security: []
+      parameters:
+        - name: cityCode
+          in: query
+          required: true
+          schema:
+            type: string
+            example: "440300"
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 候选小区
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunitySuggestEnvelope"
   /v1/properties/map:
     get:
       tags: [property]
@@ -155,7 +189,7 @@ paths:
           schema:
             type: integer
             minimum: 3
-            maximum: 20
+            maximum: 16
             default: 13
       responses:
         "200":
@@ -186,23 +220,48 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  code:
-                    type: integer
-                  message:
-                    type: string
-                  data:
-                    type: object
-                    properties:
-                      items:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/BuildingSuggest"
+                $ref: "#/components/schemas/BuildingSuggestEnvelope"
+  /v1/properties/{uuid}:
+    get:
+      tags: [property]
+      summary: 房源公开详情
+      security: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: 房源详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DetailEnvelope"
+        "404":
+          description: 不存在或已下架
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /v1/landlord/properties:
+    get:
+      tags: [property]
+      summary: 房东我的房源列表
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 房源列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MineListEnvelope"
     post:
       tags: [property]
-      summary: 房东发布房源（M2）
+      summary: 房东发布房源（命中小区名→active，否则 pending）
       security:
         - bearerAuth: []
       requestBody:
@@ -224,6 +283,284 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/landlord/properties/{uuid}/freshness:
+    post:
+      tags: [property]
+      summary: 房东回应 30 天在租巡检
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, rented, offline]
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/landlord/properties/imports:
+    post:
+      tags: [property]
+      summary: 上传 docx/xlsx 导入房源
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: 导入结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResultEnvelope"
+  /v1/landlord/contact-settings:
+    get:
+      tags: [contact]
+      summary: 房东联系方式展示设置
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 当前设置
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactSettingsEnvelope"
+    put:
+      tags: [contact]
+      summary: 更新房东联系方式展示设置
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sharePhone, shareWechat]
+              properties:
+                wechatId: {type: string}
+                sharePhone: {type: boolean}
+                shareWechat: {type: boolean}
+      responses:
+        "200":
+          description: 已保存
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/contact-requests:
+    post:
+      tags: [contact]
+      summary: 确认联系房东并获取明文联系方式
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactRequestInput"
+      responses:
+        "201":
+          description: 已记录联系请求
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactRevealEnvelope"
+        "429":
+          description: 频率限制
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/assistant/sessions:
+    post:
+      tags: [assistant]
+      summary: 创建小亿会话
+      security: []
+      responses:
+        "201":
+          description: 会话
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantSessionEnvelope"
+  /v1/assistant/messages:
+    post:
+      tags: [assistant]
+      summary: 小亿对话与槽位收集
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, text]
+              properties:
+                sessionId: {type: string, format: uuid}
+                text: {type: string}
+      responses:
+        "200":
+          description: 回复
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantMessageEnvelope"
+  /v1/assistant/recommendations:
+    get:
+      tags: [assistant]
+      summary: 小亿推荐房源
+      security: []
+      parameters:
+        - name: sessionId
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 推荐列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecommendationEnvelope"
+  /v1/properties/{uuid}/narration:
+    get:
+      tags: [assistant]
+      summary: 小亿逐套解说脚本
+      security: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 解说脚本
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NarrationEnvelope"
+  /v1/properties/{uuid}/tour:
+    get:
+      tags: [assistant]
+      summary: 房源图片/视频/地图坐标
+      security: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 展示资源
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TourEnvelope"
+  /v1/assistant/voice/status:
+    get:
+      tags: [voice]
+      summary: 语音引擎能力状态（ASR/TTS/LLM 是否就绪）
+      security: []
+      responses:
+        "200":
+          description: 状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceStatusEnvelope"
+  /v1/assistant/voice/turn:
+    post:
+      tags: [voice]
+      summary: 语音单轮（HTTP 降级：音频→文字→回复→语音 URL）
+      security: []
+      parameters:
+        - name: sessionId
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio]
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: 音频文件（wav/mp3 等），≤12MB
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: 单轮结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceTurnEnvelope"
+        "400":
+          description: 缺少 sessionId 或音频
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "503":
+          description: 语音能力未配置
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/assistant/voice:
+    get:
+      tags: [voice]
+      summary: 准双工语音 WebSocket（流式 PCM，支持 VAD 与打断）
+      description: |
+        WebSocket 升级接口。query 传 sessionId。
+        客户端发送 16kHz/16bit/单声道 PCM 二进制帧（20ms/帧）；
+        发送文本 `{"type":"interrupt"}` 可打断当前播报。
+        服务端推送事件见 VoiceEvent：vad(speech/silence)、processing、asr、reply、audio、turn_end、error、interrupted。
+      security: []
+      parameters:
+        - name: sessionId
+          in: query
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "101":
+          description: WebSocket 切换成功
+        "400":
+          description: 缺少 sessionId
+        "404":
+          description: 会话不存在或已过期
   /v1/admin/auth/login:
     post:
       tags: [admin]
@@ -251,7 +588,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/AdminLoginEnvelope"
         "401":
-          description: 用户名/密码错误或需要 TOTP
+          description: 用户名/密码错误或需要 TOTP（code=90003 表示需补动态验证码）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          description: 账号已禁用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          description: 连续登录失败触发锁定（15 分钟）
           content:
             application/json:
               schema:
@@ -310,203 +659,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  code:
-                    type: integer
-                  message:
-                    type: string
-                  data:
-                    type: object
-                    properties:
-                      items:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/AdminProperty"
-  /v1/assistant/sessions:
-    post:
-      tags: [assistant]
-      summary: 创建小亿会话
-      security: []
-      responses:
-        "201":
-          description: 会话
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data:
-                    type: object
-                    properties:
-                      sessionId: {type: string, format: uuid}
-                      slots: {type: object}
-  /v1/assistant/messages:
-    post:
-      tags: [assistant]
-      summary: 小亿对话与槽位收集
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [sessionId, text]
-              properties:
-                sessionId: {type: string, format: uuid}
-                text: {type: string}
-      responses:
-        "200":
-          description: 回复
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data:
-                    type: object
-                    properties:
-                      sessionId: {type: string, format: uuid}
-                      reply: {type: string}
-                      slots: {type: object}
-                      ready: {type: boolean}
-                      action: {type: string}
-  /v1/assistant/recommendations:
-    get:
-      tags: [assistant]
-      summary: 小亿推荐房源
-      security: []
-      parameters:
-        - name: sessionId
-          in: query
-          required: true
-          schema: {type: string, format: uuid}
-      responses:
-        "200":
-          description: 推荐列表
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data:
-                    type: object
-                    properties:
-                      sessionId: {type: string, format: uuid}
-                      items: {type: array, items: {type: object}}
-                      message: {type: string}
-  /v1/properties/{uuid}/narration:
-    get:
-      tags: [assistant]
-      summary: 小亿逐套解说脚本
-      security: []
-      parameters:
-        - name: uuid
-          in: path
-          required: true
-          schema: {type: string, format: uuid}
-      responses:
-        "200":
-          description: 解说脚本
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data: {type: object}
-  /v1/properties/{uuid}/tour:
-    get:
-      tags: [assistant]
-      summary: 房源图片/视频/地图坐标
-      security: []
-      parameters:
-        - name: uuid
-          in: path
-          required: true
-          schema: {type: string, format: uuid}
-      responses:
-        "200":
-          description: 展示资源
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data: {type: object}
-  /v1/landlord/properties/{uuid}/freshness:
-    post:
-      tags: [property]
-      summary: 房东回应 30 天在租巡检
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: uuid
-          in: path
-          required: true
-          schema: {type: string, format: uuid}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [status]
-              properties:
-                status:
-                  type: string
-                  enum: [active, rented, offline]
-      responses:
-        "200":
-          description: 更新成功
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Envelope"
-  /v1/landlord/properties/imports:
-    post:
-      tags: [property]
-      summary: 上传 docx/xlsx 导入房源
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [file]
-              properties:
-                file:
-                  type: string
-                  format: binary
-      responses:
-        "201":
-          description: 导入结果
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data:
-                    type: object
-                    properties:
-                      jobId: {type: string, format: uuid}
-                      totalRows: {type: integer}
-                      successRows: {type: integer}
-                      errorRows: {type: integer}
+                $ref: "#/components/schemas/AdminPropertyListEnvelope"
   /v1/admin/properties/{uuid}/moderate:
     post:
       tags: [admin]
@@ -535,23 +688,195 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
+  /v1/admin/imports:
+    get:
+      tags: [admin]
+      summary: 导入任务列表
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, maximum: 50, default: 50}
+      responses:
+        "200":
+          description: 导入任务
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminImportListEnvelope"
+  /v1/admin/buildings:
+    get:
+      tags: [admin]
+      summary: 楼宇列表
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, maximum: 200, default: 200}
+      responses:
+        "200":
+          description: 楼宇列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminBuildingListEnvelope"
+    post:
+      tags: [admin]
+      summary: 新建楼宇（工业园区/写字楼）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBuildingInput"
+      responses:
+        "201":
+          description: 已创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/communities:
+    post:
+      tags: [admin]
+      summary: 录入住宅小区（供发布/录入联想命中）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCommunityInput"
+      responses:
+        "201":
+          description: 已录入
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/contacts:
+    get:
+      tags: [admin]
+      summary: 联系记录列表
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, maximum: 50, default: 50}
+      responses:
+        "200":
+          description: 联系记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminContactListEnvelope"
+  /v1/admin/contacts/{uuid}:
+    get:
+      tags: [admin]
+      summary: 联系记录详情
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminContactDetailEnvelope"
+  /v1/admin/audit-logs:
+    get:
+      tags: [admin]
+      summary: 审计日志
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, maximum: 100, default: 100}
+      responses:
+        "200":
+          description: 审计日志
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAuditLogListEnvelope"
+  /v1/admin/freshness:
+    get:
+      tags: [admin]
+      summary: 30 天巡检任务列表
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, maximum: 50, default: 50}
+      responses:
+        "200":
+          description: 巡检任务
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminFreshnessListEnvelope"
+  /v1/admin/freshness/run:
+    post:
+      tags: [admin]
+      summary: 手动生成 30 天巡检任务
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 生成数量
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
   /v1/admin/auth/totp/setup:
     post:
       tags: [admin]
       summary: 生成 TOTP 密钥
+      description: 已开启 TOTP 时重新绑定必须先传当前动态验证码。
       security:
         - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  description: 已开启 TOTP 时为必填
       responses:
         "200":
           description: secret 与 otpauth URL
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data: {type: object}
+                $ref: "#/components/schemas/TOTPSetupEnvelope"
+        "400":
+          description: 已开启 TOTP 但当前验证码缺失或不正确
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "401":
+          description: 未登录或登录已过期
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/auth/totp/enable:
     post:
       tags: [admin]
@@ -573,11 +898,18 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Envelope"
+                $ref: "#/components/schemas/TOTPStateEnvelope"
+        "400":
+          description: 验证码不正确或尚未生成密钥
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/auth/totp/disable:
     post:
       tags: [admin]
       summary: 关闭 TOTP
+      description: 关闭时清除密钥，重新开启需重新绑定。
       security:
         - bearerAuth: []
       requestBody:
@@ -595,10 +927,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Envelope"
+                $ref: "#/components/schemas/TOTPStateEnvelope"
+        "400":
+          description: 动态验证码不正确
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
   /v1/admin/rentals/intake/text:
     post:
-      tags: [admin]
+      tags: [intake]
       summary: 管理站文字录入并自动匹配房东
       security:
         - bearerAuth: []
@@ -618,56 +956,702 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data: {type: object}
+                $ref: "#/components/schemas/IntakeResultEnvelope"
         "400":
-          description: 房东/楼宇/字段不匹配
+          description: 房东/小区/字段不匹配
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
-  /v1/admin/freshness/run:
+  /v1/admin/rentals/intake/media:
     post:
-      tags: [admin]
-      summary: 手动生成 30 天巡检任务
+      tags: [intake]
+      summary: 管理站图片/视频/文档录入（OCR/ASR 提取并匹配房东）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 支持 jpg/png/webp 图片、mp4/mov 视频、docx/txt/md 文档
+      responses:
+        "201":
+          description: 解析结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeMediaResultEnvelope"
+        "400":
+          description: 不支持的媒体类型或解析失败
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /v1/admin/rentals/intake:
+    get:
+      tags: [intake]
+      summary: 录入任务列表
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer}
+        - name: offset
+          in: query
+          schema: {type: integer}
+      responses:
+        "200":
+          description: 任务列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeJobListEnvelope"
+  /v1/admin/rentals/intake/{uuid}:
+    get:
+      tags: [intake]
+      summary: 录入任务详情
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 任务详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeJobDetailEnvelope"
+  /v1/admin/rentals/intake/{uuid}/match:
+    post:
+      tags: [intake]
+      summary: 人工指定匹配房东（低置信度时兜底）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakeMatchInput"
+      responses:
+        "200":
+          description: 已匹配
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeResultEnvelope"
+  /v1/admin/rentals/intake/{uuid}/retry:
+    post:
+      tags: [intake]
+      summary: 重试录入任务解析
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 重试结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntakeResultEnvelope"
+  /v1/admin/rentals/intake/{uuid}/publish:
+    post:
+      tags: [intake]
+      summary: 将录入任务发布为正式房源
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntakePublishInput"
+      responses:
+        "201":
+          description: 发布结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedPropertyEnvelope"
+  /v1/admin/lead-sources:
+    get:
+      tags: [prospect]
+      summary: 信息源列表（批次1）
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: 生成数量
+          description: 信息源列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadSourceListEnvelope"
+    post:
+      tags: [prospect]
+      summary: 新增信息源（批次1）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeadSourceInput"
+      responses:
+        "201":
+          description: 新增结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadSourceEnvelope"
+  /v1/admin/lead-sources/{uuid}/enabled:
+    patch:
+      tags: [prospect]
+      summary: 启停单个信息源（批次1，单源停机开关）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        "200":
+          description: 操作结果
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Envelope"
-  /v1/landlord/contact-settings:
+  /v1/admin/lead-sources/{uuid}:
+    patch:
+      tags: [prospect]
+      summary: 更新信息源（批次2）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLeadSourceInput"
+      responses:
+        "200":
+          description: 更新结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    delete:
+      tags: [prospect]
+      summary: 软删除信息源（批次2）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/prospects:
     get:
-      tags: [property]
-      summary: 房东联系方式展示设置
+      tags: [prospect]
+      summary: 潜在线索列表（批次1，支持 leadType / status 筛选）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: leadType
+          in: query
+          schema: {type: string, enum: [tenant, landlord]}
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, reviewed, contacted, following_up, converted, published, cold, lost, opt_out, rejected, ignored]
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 线索列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadListEnvelope"
+  /v1/admin/prospects/{uuid}:
+    get:
+      tags: [prospect]
+      summary: 线索详情（批次5：解密原文 + 跟进记录，读取即写审计日志）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 线索详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadDetailEnvelope"
+  /v1/admin/prospects/review-queue:
+    get:
+      tags: [prospect]
+      summary: 待复核队列（批次5，已评分有效意向且未复核）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: leadType
+          in: query
+          schema: {type: string, enum: [tenant, landlord]}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 待复核线索列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadListEnvelope"
+  /v1/admin/prospects/{uuid}/review:
+    post:
+      tags: [prospect]
+      summary: 人工复核（批次5：approve → reviewed，reject → rejected）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewLeadInput"
+      responses:
+        "200":
+          description: 复核后的线索
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadEnvelope"
+  /v1/admin/prospects/{uuid}/contact:
+    post:
+      tags: [prospect]
+      summary: 人工发起首条联系（批次5，内容由操作员填写，禁止自动发送）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactLeadInput"
+      responses:
+        "200":
+          description: 已发送的跟进记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowUpEnvelope"
+  /v1/admin/prospects/notifications:
+    get:
+      tags: [prospect]
+      summary: 管理员站内通知（批次11，跟进提醒生成时按管理员分发）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: unread
+          in: query
+          schema: {type: boolean, default: false}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 站内通知列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminNotificationListEnvelope"
+  /v1/admin/prospects/notifications/{id}/read:
+    post:
+      tags: [prospect]
+      summary: 标记站内通知已读
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        "200":
+          description: 已标记
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/prospects/notification-outbox:
+    get:
+      tags: [prospect]
+      summary: 微信模板外发记录（批次17，失败按退避重试，可查看状态与最后错误）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, retrying, sent, failed, not_configured]
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50, minimum: 1, maximum: 200}
+      responses:
+        "200":
+          description: 外发记录列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationOutboxListEnvelope"
+  /v1/admin/prospects/notification-outbox/{id}/retry:
+    post:
+      tags: [prospect]
+      summary: 手动重试失败或未配置的外发记录（批次17，写入审计）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        "200":
+          description: 已重置为待发送
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /v1/admin/prospects/stats:
+    get:
+      tags: [prospect]
+      summary: 获客效果统计（批次10，状态/意向分布与转化指标）
       security:
         - bearerAuth: []
       responses:
         "200":
-          description: 当前设置
+          description: 获客统计
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  code: {type: integer}
-                  message: {type: string}
-                  data:
-                    type: object
-                    properties:
-                      phoneMask: {type: string}
-                      wechatId: {type: string}
-                      sharePhone: {type: boolean}
-                      shareWechat: {type: boolean}
+                $ref: "#/components/schemas/ProspectStatsEnvelope"
+  /v1/admin/prospects/{uuid}/follow-ups:
+    post:
+      tags: [prospect]
+      summary: 记录后续跟进（批次8，仅 contacted/following_up 可用，内容加密并写审计）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddFollowUpInput"
+      responses:
+        "200":
+          description: 新增的跟进记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FollowUpEnvelope"
+  /v1/admin/prospects/reminders:
+    get:
+      tags: [prospect]
+      summary: 跟进提醒列表（批次8，3 天待跟进 / 7 天超期未更新）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 未处理提醒列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReminderListEnvelope"
+  /v1/admin/prospects/collect-runs:
+    get:
+      tags: [prospect]
+      summary: 采集运行记录（批次12，按信息源过滤，含失败原因与统计）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sourceUuid
+          in: query
+          schema: {type: string, format: uuid}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50, maximum: 200}
+      responses:
+        "200":
+          description: 采集运行记录列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectCollectRunListEnvelope"
+  /v1/admin/prospects/audit-logs:
+    get:
+      tags: [prospect]
+      summary: 操作审计日志（批次13，默认仅返回 prospect.* 动作，支持按动作/资源/操作人/时间过滤）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: action
+          in: query
+          schema: {type: string}
+        - name: targetType
+          in: query
+          schema: {type: string}
+        - name: targetId
+          in: query
+          schema: {type: string}
+        - name: actorId
+          in: query
+          schema: {type: integer, format: int64}
+        - name: from
+          in: query
+          description: 起始时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+        - name: to
+          in: query
+          description: 结束时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50, maximum: 200}
+        - name: offset
+          in: query
+          schema: {type: integer, default: 0, minimum: 0}
+      responses:
+        "200":
+          description: 审计日志分页结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectAuditLogListEnvelope"
+  /v1/admin/prospects/source-stats:
+    get:
+      tags: [prospect]
+      summary: 来源效果明细（批次14，按信息源聚合采集/线索/跟进指标，时间区间可选）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: 起始时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+        - name: to
+          in: query
+          description: 结束时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+      responses:
+        "200":
+          description: 来源效果明细
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectSourceStatListEnvelope"
+        "400":
+          description: 时间参数不合法
+  /v1/admin/prospects/source-stats/export:
+    get:
+      tags: [prospect]
+      summary: 导出来源效果明细 CSV（批次14，仅聚合指标，不含正文与联系方式）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: from
+          in: query
+          description: 起始时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+        - name: to
+          in: query
+          description: 结束时间（含），RFC3339 或 YYYY-MM-DD
+          schema: {type: string}
+      responses:
+        "200":
+          description: CSV 文件（UTF-8 BOM，Excel 可直接打开）
+          content:
+            text/csv:
+              schema: {type: string, format: binary}
+        "400":
+          description: 时间参数不合法
+  /v1/admin/prospects/batch:
+    post:
+      tags: [prospect]
+      summary: 线索批量操作（批次15，审批/拒绝/流转/拒收，逐条执行并逐条审计）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProspectBatchActionRequest"
+      responses:
+        "200":
+          description: 批量执行结果；部分成功也返回 200，逐条看 results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectBatchActionEnvelope"
+        "400":
+          description: 参数不合法（空列表、超过 100 条、未知 action）
+  /v1/admin/prospects/{uuid}/status:
+    post:
+      tags: [prospect]
+      summary: 手动流转线索状态（批次6，opt_out/contacted/reviewed 走专用接口）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransitionLeadInput"
+      responses:
+        "200":
+          description: 流转后的线索
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadEnvelope"
+  /v1/admin/prospects/{uuid}/opt-out:
+    post:
+      tags: [prospect]
+      summary: 人工拒收（批次6，写入全局拒收名单并置为 opt_out）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OptOutLeadInput"
+      responses:
+        "200":
+          description: 拒收后的线索
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProspectLeadEnvelope"
+  /v1/admin/prospects/opt-outs:
+    get:
+      tags: [prospect]
+      summary: 拒收名单列表（批次6，不返回联系方式哈希）
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: leadType
+          in: query
+          schema: {type: string, enum: [tenant, landlord]}
+        - name: limit
+          in: query
+          schema: {type: integer, default: 50}
+      responses:
+        "200":
+          description: 拒收记录列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OptOutListEnvelope"
+  /v1/admin/prospects/kill-switch:
+    get:
+      tags: [prospect]
+      summary: 查询全局停机开关状态（批次2 实现）
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 停机状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KillSwitchEnvelope"
     put:
-      tags: [property]
-      summary: 更新房东联系方式展示设置
+      tags: [prospect]
+      summary: 切换全局停机开关（批次2 实现）
       security:
         - bearerAuth: []
       requestBody:
@@ -676,68 +1660,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [sharePhone, shareWechat]
+              required: [halted]
               properties:
-                wechatId: {type: string}
-                sharePhone: {type: boolean}
-                shareWechat: {type: boolean}
+                halted: {type: boolean}
       responses:
         "200":
-          description: 已保存
+          description: 切换结果
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Envelope"
-  /v1/contact-requests:
-    post:
-      tags: [property]
-      summary: 确认联系房东并获取明文联系方式
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ContactRequestInput"
-      responses:
-        "201":
-          description: 已记录联系请求
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ContactRevealEnvelope"
-        "429":
-          description: 频率限制
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
-  /v1/properties/{uuid}:
-    get:
-      tags: [property]
-      summary: 房源公开详情
-      security: []
-      parameters:
-        - name: uuid
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        "200":
-          description: 房源详情
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DetailEnvelope"
-        "404":
-          description: 不存在或已下架
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorEnvelope"
+                $ref: "#/components/schemas/KillSwitchEnvelope"
 components:
   securitySchemes:
     bearerAuth:
@@ -804,69 +1736,143 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/PublicUser"
+    CommunitySuggestItem:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        name: {type: string}
+        districtCode: {type: string}
+        districtName: {type: string}
+        streetCode: {type: string}
+        streetName: {type: string}
+        communityType: {type: string}
+        lat: {type: number}
+        lng: {type: number}
+    CommunitySuggestData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CommunitySuggestItem"
+    CommunitySuggestEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/CommunitySuggestData"
+    CreateCommunityInput:
+      type: object
+      required: [cityCode, districtCode, name]
+      properties:
+        cityCode: {type: string}
+        districtCode: {type: string}
+        districtName: {type: string}
+        streetCode: {type: string}
+        streetName: {type: string}
+        name: {type: string}
+        aliases: {type: array, items: {type: string}}
+        communityType: {type: string}
+        poiId: {type: string}
+        lat: {type: number}
+        lng: {type: number}
+    MapCluster:
+      type: object
+      properties:
+        id: {type: string}
+        districtCode: {type: string}
+        districtName: {type: string}
+        streetCode: {type: string}
+        streetName: {type: string}
+        lat: {type: number}
+        lng: {type: number}
+        count: {type: integer}
+        level: {type: string}
+    MapItem:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        districtCode: {type: string}
+        districtName: {type: string}
+        streetCode: {type: string}
+        streetName: {type: string}
+        lat: {type: number}
+        lng: {type: number}
+        areaSqm: {type: number}
+        rentCents: {type: integer}
+        layout: {type: string}
+        title: {type: string}
+    MapData:
+      type: object
+      properties:
+        cityCode: {type: string}
+        zoom: {type: integer}
+        clusters:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapCluster"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MapItem"
+    MapEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/MapData"
     BuildingSuggest:
       type: object
       properties:
-        uuid:
-          type: string
-          format: uuid
-        name:
-          type: string
-        districtCode:
-          type: string
-        districtName:
-          type: string
-        streetCode:
-          type: string
-        streetName:
-          type: string
-        buildingType:
-          type: string
-          enum: [industrial_park, office_building]
-        lat:
-          type: number
-        lng:
-          type: number
-    CreatePropertyInput:
+        uuid: {type: string, format: uuid}
+        name: {type: string}
+        districtCode: {type: string}
+        districtName: {type: string}
+        streetCode: {type: string}
+        streetName: {type: string}
+        buildingType: {type: string, enum: [industrial_park, office_building]}
+        lat: {type: number}
+        lng: {type: number}
+    BuildingSuggestData:
       type: object
-      required: [buildingUuid, areaSqm, rentCents]
       properties:
-        buildingUuid:
-          type: string
-          format: uuid
-        areaSqm:
-          type: number
-          minimum: 5
-          maximum: 1000
-        rentCents:
-          type: integer
-          minimum: 10000
-          maximum: 100000000
-        layout:
-          type: string
-        floor:
-          type: string
-        orientation:
-          type: string
-        title:
-          type: string
-        description:
-          type: string
-        imageKeys:
+        items:
           type: array
           items:
-            type: string
+            $ref: "#/components/schemas/BuildingSuggest"
+    BuildingSuggestEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/BuildingSuggestData"
+    CreatePropertyInput:
+      type: object
+      required: [areaSqm, rentCents]
+      description: |
+        发布门槛（v1.4）：命中小区名（传 communityUuid 或 communityName）→ active；
+        传 buildingUuid 的非住宅房源走建筑联想。两者至少一个，否则校验失败。
+      properties:
+        communityUuid: {type: string, format: uuid}
+        communityName: {type: string}
+        buildingUuid: {type: string, format: uuid}
+        areaSqm: {type: number, minimum: 5, maximum: 1000}
+        rentCents: {type: integer, minimum: 100, maximum: 100000000}
+        layout: {type: string}
+        floor: {type: string}
+        orientation: {type: string}
+        title: {type: string}
+        description: {type: string}
+        imageKeys: {type: array, items: {type: string}}
     CreatedProperty:
       type: object
       properties:
-        uuid:
-          type: string
-          format: uuid
-        status:
-          type: string
-          enum: [active, pending, draft]
-        pendingReason:
-          type: string
+        uuid: {type: string, format: uuid}
+        status: {type: string, enum: [active, pending, draft]}
+        pendingReason: {type: string}
     CreatedPropertyEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
@@ -874,25 +1880,285 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/CreatedProperty"
+    MineItem:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        title: {type: string}
+        communityName: {type: string}
+        status: {type: string}
+        pendingReason: {type: string}
+        areaSqm: {type: number}
+        rentCents: {type: integer}
+        lastConfirmedAt: {type: string}
+        createdAt: {type: string}
+        needsConfirm: {type: boolean}
+    MineListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MineItem"
+    MineListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/MineListData"
+    PropertyImage:
+      type: object
+      properties:
+        objectKey: {type: string}
+        url: {type: string}
+        width: {type: integer}
+        height: {type: integer}
+        sort: {type: integer}
+    PropertyVideo:
+      type: object
+      properties:
+        objectKey: {type: string}
+        url: {type: string}
+        coverKey: {type: string}
+        coverUrl: {type: string}
+        durationMs: {type: integer}
+        sort: {type: integer}
+    PropertyDetail:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        districtCode: {type: string}
+        districtName: {type: string}
+        streetCode: {type: string}
+        streetName: {type: string}
+        areaSqm: {type: number}
+        rentCents: {type: integer}
+        layout: {type: string}
+        floor: {type: string}
+        orientation: {type: string}
+        title: {type: string}
+        description: {type: string}
+        buildingType: {type: string}
+        publishedAt: {type: string}
+        lastConfirmedAt: {type: string}
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/PropertyImage"
+        videos:
+          type: array
+          items:
+            $ref: "#/components/schemas/PropertyVideo"
+    DetailEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/PropertyDetail"
+    ContactRequestInput:
+      type: object
+      required: [propertyUuid, consent]
+      properties:
+        propertyUuid: {type: string, format: uuid}
+        consent: {type: boolean, const: true}
+        note: {type: string, maxLength: 200}
+    ContactReveal:
+      type: object
+      properties:
+        requestUuid: {type: string, format: uuid}
+        phone: {type: string}
+        wechatId: {type: string}
+        contactAvailable: {type: boolean}
+        notificationStatus: {type: string}
+        message: {type: string}
+    ContactRevealEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ContactReveal"
+    ContactSettings:
+      type: object
+      properties:
+        phoneMask: {type: string}
+        wechatId: {type: string}
+        sharePhone: {type: boolean}
+        shareWechat: {type: boolean}
+    ContactSettingsEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ContactSettings"
+    ImportResult:
+      type: object
+      properties:
+        jobId: {type: string, format: uuid}
+        totalRows: {type: integer}
+        successRows: {type: integer}
+        errorRows: {type: integer}
+    ImportResultEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ImportResult"
+    AssistantSession:
+      type: object
+      properties:
+        sessionId: {type: string, format: uuid}
+        slots: {type: object}
+    AssistantSessionEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AssistantSession"
+    AssistantMessage:
+      type: object
+      properties:
+        sessionId: {type: string, format: uuid}
+        reply: {type: string}
+        slots: {type: object}
+        ready: {type: boolean}
+        action: {type: string}
+    AssistantMessageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AssistantMessage"
+    RecommendationItem:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        title: {type: string}
+        districtName: {type: string}
+        streetName: {type: string}
+        areaSqm: {type: number}
+        rentCents: {type: integer}
+        layout: {type: string}
+        score: {type: integer}
+        reasons: {type: array, items: {type: string}}
+        imageCount: {type: integer}
+    RecommendationResult:
+      type: object
+      properties:
+        sessionId: {type: string, format: uuid}
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecommendationItem"
+        message: {type: string}
+    RecommendationEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/RecommendationResult"
+    NarrationSegment:
+      type: object
+      properties:
+        seq: {type: integer}
+        scene: {type: string}
+        text: {type: string}
+        action: {type: string}
+        imageId: {type: string}
+        mediaId: {type: string}
+    Narration:
+      type: object
+      properties:
+        propertyId: {type: string, format: uuid}
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/NarrationSegment"
+    NarrationEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/Narration"
+    Tour:
+      type: object
+      properties:
+        propertyId: {type: string, format: uuid}
+        images: {type: array, items: {type: string}}
+        videos: {type: array, items: {type: string}}
+        lat: {type: number}
+        lng: {type: number}
+    TourEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/Tour"
+    VoiceStatus:
+      type: object
+      properties:
+        engine: {type: string, description: 准双工 half-duplex}
+        asr: {type: boolean}
+        tts: {type: boolean}
+        llm: {type: boolean}
+        hint: {type: string}
+    VoiceStatusEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/VoiceStatus"
+    VoiceTurnResult:
+      type: object
+      properties:
+        transcript: {type: string}
+        reply: {type: string}
+        slots: {type: object}
+        ready: {type: boolean}
+        action: {type: string}
+        audioUrls: {type: array, items: {type: string}}
+    VoiceTurnEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/VoiceTurnResult"
+    VoiceEvent:
+      type: object
+      description: WebSocket 推送事件
+      properties:
+        type: {type: string, enum: [vad, processing, asr, reply, audio, turn_end, error, interrupted]}
+        text: {type: string}
+        seq: {type: integer}
+        url: {type: string}
+        hint: {type: string}
+        slots: {type: object}
+        status: {type: string}
+        action: {type: string}
+        ready: {type: boolean}
     AdminUser:
       type: object
       properties:
-        uuid:
-          type: string
-          format: uuid
-        username:
-          type: string
-        role:
-          type: string
-          enum: [super_admin, operations, reviewer, support, auditor]
+        uuid: {type: string, format: uuid}
+        username: {type: string}
+        role: {type: string, enum: [super_admin, operations, reviewer, support, auditor]}
+        totpEnabled: {type: boolean, description: 是否已开启 TOTP 二次验证}
     AdminLoginResult:
       type: object
       properties:
-        token:
-          type: string
-        expiresAt:
-          type: string
-          format: date-time
+        token: {type: string}
+        expiresAt: {type: string, format: date-time}
         admin:
           $ref: "#/components/schemas/AdminUser"
     AdminLoginEnvelope:
@@ -909,19 +2175,37 @@ components:
           properties:
             data:
               $ref: "#/components/schemas/AdminUser"
+    TOTPSetupResult:
+      type: object
+      properties:
+        secret: {type: string, description: Base32 密钥，仅本次返回}
+        otpauthUrl: {type: string, description: 验证器可识别的 otpauth URL}
+    TOTPSetupEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/TOTPSetupResult"
+    TOTPState:
+      type: object
+      properties:
+        enabled: {type: boolean}
+    TOTPStateEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/TOTPState"
     AdminStats:
       type: object
       properties:
-        activeProperties:
-          type: integer
-        pendingProperties:
-          type: integer
-        users:
-          type: integer
-        landlords:
-          type: integer
-        contactRequests:
-          type: integer
+        activeProperties: {type: integer}
+        pendingProperties: {type: integer}
+        users: {type: integer}
+        landlords: {type: integer}
+        contactRequests: {type: integer}
     AdminStatsEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
@@ -932,181 +2216,739 @@ components:
     AdminProperty:
       type: object
       properties:
-        uuid:
-          type: string
-          format: uuid
-        title:
-          type: string
-        status:
-          type: string
-        districtName:
-          type: string
-        streetName:
-          type: string
-        areaSqm:
-          type: number
-        rentCents:
-          type: integer
-        createdAt:
-          type: string
-    ContactRequestInput:
-      type: object
-      required: [propertyUuid, consent]
-      properties:
-        propertyUuid:
-          type: string
-          format: uuid
-        consent:
-          type: boolean
-          const: true
-        note:
-          type: string
-          maxLength: 200
-    ContactReveal:
+        uuid: {type: string, format: uuid}
+        title: {type: string}
+        status: {type: string}
+        districtName: {type: string}
+        streetName: {type: string}
+        areaSqm: {type: number}
+        rentCents: {type: integer}
+        createdAt: {type: string}
+    AdminPropertyListData:
       type: object
       properties:
-        requestUuid:
-          type: string
-          format: uuid
-        phone:
-          type: string
-        wechatId:
-          type: string
-        contactAvailable:
-          type: boolean
-        notificationStatus:
-          type: string
-        message:
-          type: string
-    ContactRevealEnvelope:
-      allOf:
-        - $ref: "#/components/schemas/Envelope"
-        - type: object
-          properties:
-            data:
-              $ref: "#/components/schemas/ContactReveal"
-    MapCluster:
-      type: object
-      properties:
-        id:
-          type: string
-        districtCode:
-          type: string
-        districtName:
-          type: string
-        streetCode:
-          type: string
-        streetName:
-          type: string
-        lat:
-          type: number
-        lng:
-          type: number
-        count:
-          type: integer
-        level:
-          type: string
-    MapItem:
-      type: object
-      properties:
-        uuid:
-          type: string
-          format: uuid
-        districtCode:
-          type: string
-        districtName:
-          type: string
-        streetCode:
-          type: string
-        streetName:
-          type: string
-        lat:
-          type: number
-        lng:
-          type: number
-        areaSqm:
-          type: number
-        rentCents:
-          type: integer
-        layout:
-          type: string
-        title:
-          type: string
-    MapData:
-      type: object
-      properties:
-        cityCode:
-          type: string
-        zoom:
-          type: integer
-        clusters:
-          type: array
-          items:
-            $ref: "#/components/schemas/MapCluster"
         items:
           type: array
           items:
-            $ref: "#/components/schemas/MapItem"
-    MapEnvelope:
+            $ref: "#/components/schemas/AdminProperty"
+    AdminPropertyListEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             data:
-              $ref: "#/components/schemas/MapData"
-    PropertyImage:
+              $ref: "#/components/schemas/AdminPropertyListData"
+    AdminImportJob:
       type: object
       properties:
-        objectKey:
-          type: string
-        width:
-          type: integer
-        height:
-          type: integer
-        sort:
-          type: integer
-    PropertyDetail:
+        uuid: {type: string, format: uuid}
+        fileName: {type: string}
+        fileType: {type: string}
+        status: {type: string}
+        totalRows: {type: integer}
+        successRows: {type: integer}
+        errorRows: {type: integer}
+        createdAt: {type: string}
+    AdminImportListData:
       type: object
       properties:
-        uuid:
-          type: string
-          format: uuid
-        districtCode:
-          type: string
-        districtName:
-          type: string
-        streetCode:
-          type: string
-        streetName:
-          type: string
-        areaSqm:
-          type: number
-        rentCents:
-          type: integer
-        layout:
-          type: string
-        floor:
-          type: string
-        orientation:
-          type: string
-        title:
-          type: string
-        description:
-          type: string
-        buildingType:
-          type: string
-        publishedAt:
-          type: string
-        lastConfirmedAt:
-          type: string
-        images:
+        items:
           type: array
           items:
-            $ref: "#/components/schemas/PropertyImage"
-    DetailEnvelope:
+            $ref: "#/components/schemas/AdminImportJob"
+    AdminImportListEnvelope:
       allOf:
         - $ref: "#/components/schemas/Envelope"
         - type: object
           properties:
             data:
-              $ref: "#/components/schemas/PropertyDetail"
+              $ref: "#/components/schemas/AdminImportListData"
+    AdminBuilding:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        name: {type: string}
+        districtName: {type: string}
+        streetName: {type: string}
+        buildingType: {type: string}
+        reviewStatus: {type: string}
+        lat: {type: number}
+        lng: {type: number}
+    AdminBuildingListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminBuilding"
+    AdminBuildingListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminBuildingListData"
+    CreateBuildingInput:
+      type: object
+      required: [name, districtCode, buildingType]
+      properties:
+        name: {type: string}
+        districtCode: {type: string}
+        districtName: {type: string}
+        streetCode: {type: string}
+        streetName: {type: string}
+        buildingType: {type: string}
+        lat: {type: number}
+        lng: {type: number}
+    AdminContact:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        tenantSurname: {type: string}
+        tenantPhoneMask: {type: string}
+        propertyTitle: {type: string}
+        status: {type: string}
+        createdAt: {type: string}
+    AdminContactDetail:
+      allOf:
+        - $ref: "#/components/schemas/AdminContact"
+        - type: object
+          properties:
+            note: {type: string}
+    AdminContactListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminContact"
+    AdminContactListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminContactListData"
+    AdminContactDetailEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminContactDetail"
+    AdminAuditLog:
+      type: object
+      properties:
+        id: {type: integer}
+        actorType: {type: string}
+        action: {type: string}
+        targetType: {type: string}
+        targetId: {type: string}
+        createdAt: {type: string}
+    AdminAuditLogListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAuditLog"
+    AdminAuditLogListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminAuditLogListData"
+    AdminFreshness:
+      type: object
+      properties:
+        id: {type: integer}
+        propertyUuid: {type: string, format: uuid}
+        title: {type: string}
+        status: {type: string}
+        createdAt: {type: string}
+    AdminFreshnessListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminFreshness"
+    AdminFreshnessListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminFreshnessListData"
+    IntakeResult:
+      type: object
+      properties:
+        jobId: {type: string, format: uuid}
+        propertyId: {type: string, format: uuid}
+        status: {type: string}
+        landlordId: {type: string, format: uuid}
+        communityName: {type: string}
+        message: {type: string}
+    IntakeResultEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/IntakeResult"
+    IntakeMediaResult:
+      type: object
+      properties:
+        jobId: {type: string, format: uuid}
+        status: {type: string}
+        matchStatus: {type: string}
+        mediaUrls: {type: array, items: {type: string}}
+        maskedPhone: {type: string}
+        landlordId: {type: string, format: uuid}
+        confidence: {type: number}
+        message: {type: string}
+        ocrText: {type: string}
+    IntakeMediaResultEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/IntakeMediaResult"
+    IntakeJobSummary:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        inputType: {type: string}
+        status: {type: string}
+        matchStatus: {type: string}
+        communityName: {type: string}
+        landlordId: {type: string, format: uuid}
+        propertyId: {type: string, format: uuid}
+        confidence: {type: number}
+        errorMessage: {type: string}
+        areaSqm: {type: number}
+        rentYuan: {type: number}
+        title: {type: string}
+        createdAt: {type: string}
+    IntakeJobListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntakeJobSummary"
+    IntakeJobListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/IntakeJobListData"
+    IntakeJobDetailEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/IntakeJobSummary"
+    IntakeMatchInput:
+      type: object
+      required: [landlordId]
+      properties:
+        landlordId: {type: string, format: uuid}
+        reason: {type: string}
+    IntakePublishInput:
+      type: object
+      required: [communityUuid, areaSqm, rentCents]
+      properties:
+        communityUuid: {type: string, format: uuid}
+        communityName: {type: string}
+        areaSqm: {type: number}
+        rentCents: {type: integer}
+        layout: {type: string}
+        floor: {type: string}
+        orientation: {type: string}
+        title: {type: string}
+        description: {type: string}
+        imageKeys: {type: array, items: {type: string}}
+    CreateLeadSourceInput:
+      type: object
+      required: [name, kind]
+      properties:
+        name: {type: string}
+        kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
+        baseUrl: {type: string}
+        rateLimitMs: {type: integer, minimum: 0}
+        collectIntervalMinutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+          description: 采集间隔（分钟），不传默认 60
+        reviewNote: {type: string}
+    UpdateLeadSourceInput:
+      type: object
+      required: [name, kind]
+      properties:
+        name: {type: string}
+        kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
+        baseUrl: {type: string}
+        rateLimitMs: {type: integer, minimum: 0}
+        collectIntervalMinutes:
+          type: integer
+          minimum: 5
+          maximum: 1440
+        robotsOk: {type: boolean}
+        termsOk: {type: boolean}
+        reviewNote: {type: string}
+    LeadSource:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        name: {type: string}
+        kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
+        baseUrl: {type: string}
+        robotsOk: {type: boolean}
+        termsOk: {type: boolean}
+        rateLimitMs: {type: integer}
+        collectIntervalMinutes: {type: integer}
+        lastCollectedAt: {type: string}
+        nextCollectAt: {type: string}
+        consecutiveFailures: {type: integer}
+        lastError: {type: string}
+        lastErrorAt: {type: string}
+        enabled: {type: boolean}
+        reviewNote: {type: string}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+    LeadSourceListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadSource"
+    LeadSourceListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/LeadSourceListData"
+    LeadSourceEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/LeadSource"
+    ProspectCollectRun:
+      type: object
+      description: 一次采集尝试的运行记录（批次12）
+      properties:
+        id: {type: integer}
+        sourceUuid: {type: string, format: uuid}
+        sourceName: {type: string}
+        status: {type: string, enum: [success, failed]}
+        fetched: {type: integer}
+        ingested: {type: integer}
+        duplicate: {type: integer}
+        optedOut: {type: integer}
+        invalid: {type: integer}
+        failed: {type: integer}
+        errorMessage: {type: string}
+        startedAt: {type: string}
+        finishedAt: {type: string}
+    ProspectCollectRunListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectCollectRun"
+    ProspectCollectRunListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectCollectRunListData"
+    ProspectAuditLog:
+      type: object
+      description: 自主获客操作审计日志（批次13）
+      properties:
+        id: {type: integer}
+        actorType: {type: string, enum: [admin, user]}
+        actorId: {type: integer}
+        actorName: {type: string, description: 管理员用户名，非管理员为空}
+        action: {type: string, description: 形如 prospect.lead.approve}
+        targetType: {type: string}
+        targetId: {type: string}
+        createdAt: {type: string}
+    ProspectAuditLogListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectAuditLog"
+        total: {type: integer, description: 符合过滤条件的总数}
+        limit: {type: integer}
+        offset: {type: integer}
+    ProspectAuditLogListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectAuditLogListData"
+    ProspectSourceStat:
+      type: object
+      description: 按信息源聚合的效果指标（批次14）
+      properties:
+        sourceUuid: {type: string, format: uuid}
+        sourceName: {type: string}
+        kind: {type: string, enum: [self_owned, public_api, third_party_scrape]}
+        enabled: {type: boolean}
+        runs: {type: integer, description: 采集次数}
+        fetched: {type: integer, description: 抓取条数}
+        ingested: {type: integer, description: 首次入库条数}
+        duplicate: {type: integer, description: 重复命中条数}
+        optedOut: {type: integer, description: 采集时命中拒收条数}
+        invalid: {type: integer, description: 无效条数}
+        failed: {type: integer, description: 失败条数}
+        leadsTotal: {type: integer, description: 线索总数}
+        pending: {type: integer, description: 待复核（new）}
+        reviewed: {type: integer}
+        followingUp: {type: integer, description: 已联系或跟进中}
+        converted: {type: integer}
+        published: {type: integer}
+        rejected: {type: integer}
+        leadsOptedOut: {type: integer, description: 线索中被拒收的数量}
+        qualified: {type: integer, description: 评分达标且非 unknown}
+        avgScore: {type: integer}
+        followUps: {type: integer, description: 跟进记录数}
+        conversionRate: {type: number, description: "0–1 的转化率（converted / leadsTotal）"}
+    ProspectSourceStatListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectSourceStat"
+    ProspectSourceStatListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectSourceStatListData"
+    ProspectBatchActionRequest:
+      type: object
+      required: [action, uuids]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject, transition, opt_out]
+        uuids:
+          type: array
+          maxItems: 100
+          items: {type: string, format: uuid}
+        status:
+          type: string
+          description: action 为 transition 时的目标状态
+        reason:
+          type: string
+          description: action 为 opt_out 时的拒收原因
+    ProspectBatchItemResult:
+      type: object
+      properties:
+        uuid: {type: string, format: uuid}
+        ok: {type: boolean}
+        message: {type: string, description: 失败原因}
+    ProspectBatchActionResult:
+      type: object
+      properties:
+        total: {type: integer}
+        succeeded: {type: integer}
+        failed: {type: integer}
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectBatchItemResult"
+    ProspectBatchActionEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectBatchActionResult"
+    ProspectLead:
+      type: object
+      description: 对外线索视图，不含原文密文与联系方式明文
+      properties:
+        uuid: {type: string, format: uuid}
+        sourceName: {type: string}
+        leadType: {type: string, enum: [tenant, landlord]}
+        platform: {type: string}
+        contactChannel: {type: string, enum: [phone, wechat, in_app, sms, unknown]}
+        cityCode: {type: string}
+        districtCode: {type: string}
+        budgetCents: {type: integer}
+        areaSqm: {type: number}
+        layout: {type: string}
+        intentScore: {type: integer}
+        intentStatus: {type: string, enum: [seeking, rented, landlord_listing, agent, irrelevant, unknown]}
+        status:
+          type: string
+          enum: [new, reviewed, contacted, following_up, converted, published, cold, lost, opt_out, rejected, ignored]
+        matchedPropertyId: {type: string, format: uuid}
+        stale:
+          type: boolean
+          description: 是否已超期（7 天未跟进），true 时状态仍为 following_up
+        staleAt: {type: string}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+    ProspectLeadListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProspectLead"
+    ProspectLeadListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectLeadListData"
+    ProspectLeadEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectLead"
+    KillSwitchState:
+      type: object
+      properties:
+        halted: {type: boolean}
+    KillSwitchEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/KillSwitchState"
+    ProspectLeadDetail:
+      allOf:
+        - $ref: "#/components/schemas/ProspectLead"
+        - type: object
+          properties:
+            rawText:
+              type: string
+              description: 解密后的原文，仅复核/联系所需；每次读取写审计日志
+            followUps:
+              type: array
+              items:
+                $ref: "#/components/schemas/FollowUp"
+    ProspectLeadDetailEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectLeadDetail"
+    ReviewLeadInput:
+      type: object
+      required: [decision]
+      properties:
+        decision: {type: string, enum: [approve, reject]}
+    ContactLeadInput:
+      type: object
+      required: [channel, content]
+      properties:
+        channel: {type: string, enum: [in_app, sms, wechat, phone]}
+        content:
+          type: string
+          minLength: 1
+          description: 首条联系内容，必须人工填写，服务端不自动生成
+    FollowUp:
+      type: object
+      properties:
+        id: {type: integer}
+        channel: {type: string, enum: [in_app, sms, wechat, phone]}
+        direction: {type: string, enum: [outbound, inbound]}
+        status: {type: string, enum: [pending, sent, failed, received]}
+        content: {type: string}
+        sentAt: {type: string}
+        createdAt: {type: string}
+    FollowUpEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/FollowUp"
+    AddFollowUpInput:
+      type: object
+      required: [channel, content]
+      properties:
+        channel: {type: string, enum: [in_app, sms, wechat, phone]}
+        direction:
+          type: string
+          enum: [outbound, inbound]
+          description: 不传默认 outbound；outbound 记为 sent，inbound 记为 received
+        content:
+          type: string
+          minLength: 1
+          description: 跟进内容，人工填写，服务端加密存储
+    Reminder:
+      type: object
+      properties:
+        id: {type: integer}
+        leadUuid: {type: string, format: uuid}
+        leadType: {type: string, enum: [tenant, landlord]}
+        leadStatus:
+          type: string
+          enum: [new, reviewed, contacted, following_up, converted, published, cold, lost, opt_out, rejected, ignored]
+        level: {type: string, enum: [due_3d, overdue_7d]}
+        createdAt: {type: string}
+    ReminderListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reminder"
+    ReminderListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ReminderListData"
+    StatusCount:
+      type: object
+      properties:
+        status: {type: string}
+        count: {type: integer}
+    IntentCount:
+      type: object
+      properties:
+        intentStatus: {type: string}
+        count: {type: integer}
+    ProspectStats:
+      type: object
+      properties:
+        totalLeads: {type: integer}
+        reviewPending: {type: integer, description: 待复核队列数量}
+        contactedLeads: {type: integer, description: 至少有一条外呼跟进记录的线索数}
+        convertedLeads: {type: integer}
+        conversionRate: {type: number, description: 已转化 / 已联系，0–1}
+        staleLeads: {type: integer, description: 已超期且仍在跟进阶段的线索数}
+        openReminders: {type: integer}
+        byStatus:
+          type: array
+          items:
+            $ref: "#/components/schemas/StatusCount"
+        byIntent:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntentCount"
+    ProspectStatsEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/ProspectStats"
+    AdminNotification:
+      type: object
+      properties:
+        id: {type: integer}
+        eventType: {type: string, enum: [prospect_followup_due, prospect_followup_overdue, prospect_collect_failed]}
+        level: {type: string, enum: [due_3d, overdue_7d, error]}
+        title: {type: string}
+        body: {type: string}
+        leadUuid: {type: string, format: uuid}
+        status: {type: string, enum: [unread, read]}
+        createdAt: {type: string}
+    AdminNotificationListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminNotification"
+        unread: {type: integer}
+    NotificationOutboxRecord:
+      type: object
+      properties:
+        id: {type: integer}
+        eventType: {type: string}
+        recipientUserId: {type: integer}
+        status: {type: string, enum: [pending, retrying, sent, failed, not_configured]}
+        attempts: {type: integer}
+        lastError: {type: string}
+        nextRetryAt: {type: string}
+        sentAt: {type: string}
+        createdAt: {type: string}
+        updatedAt: {type: string}
+    NotificationOutboxListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/NotificationOutboxRecord"
+    NotificationOutboxListEnvelope:
+      type: object
+      properties:
+        code: {type: integer}
+        message: {type: string}
+        data:
+          $ref: "#/components/schemas/NotificationOutboxListData"
+        traceId: {type: string}
+    AdminNotificationListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AdminNotificationListData"
+    TransitionLeadInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [following_up, converted, published, cold, lost, rejected, ignored]
+          description: reviewed/contacted/opt_out 必须使用复核、联系、拒收专用接口
+    OptOutLeadInput:
+      type: object
+      properties:
+        reason: {type: string}
+    OptOut:
+      type: object
+      properties:
+        id: {type: integer}
+        leadType: {type: string, enum: [tenant, landlord]}
+        reason: {type: string}
+        optedOutAt: {type: string}
+    OptOutListData:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OptOut"
+    OptOutListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/OptOutListData"

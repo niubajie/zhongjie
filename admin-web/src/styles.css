@@ -219,6 +219,57 @@ h1 {
   color: #94a3b8;
 }
 
+.stat-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.bar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 96px 1fr 40px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.bar-label {
+  color: var(--muted);
+}
+
+.bar-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+.bar-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 760px) {
+  .stat-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 .grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -472,6 +523,10 @@ th {
   color: #991b1b;
 }
 
+.stale-tag {
+  margin-left: 6px;
+}
+
 .logout {
   margin-left: auto;
   padding: 4px 8px;
@@ -680,3 +735,153 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+.kill-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.kill-row p {
+  margin: 4px 0 0;
+}
+
+.kill-row .btn {
+  margin-top: 0;
+}
+
+.prospect-toolbar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.prospect-toolbar select {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  font: inherit;
+}
+
+.prospect-toolbar .btn {
+  margin-top: 0;
+}
+
+.prospect-form {
+  margin-top: 12px;
+}
+
+.prospect-form .action-row .btn {
+  margin-top: 0;
+}
+
+.action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.prospect-detail {
+  margin-top: 14px;
+}
+
+.raw-text {
+  white-space: pre-wrap;
+  margin: 6px 0 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.detail-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.action-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.action-box h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.action-box select,
+.action-box input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  font: inherit;
+}
+
+.action-box textarea {
+  min-height: 80px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  font: inherit;
+  resize: vertical;
+}
+
+.action-box .btn {
+  margin-top: 0;
+}
+
+.btn.primary.danger {
+  background: var(--danger);
+}
+
+.status-new {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-reviewed {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.status-contacted,
+.status-following_up {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.status-converted,
+.status-published {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-opt_out,
+.status-rejected,
+.status-cold,
+.status-lost,
+.status-ignored {
+  background: #fee2e2;
+  color: #991b1b;
+}
+

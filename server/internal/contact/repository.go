@@ -116,18 +116,53 @@ func (r *Repository) CountToday(ctx context.Context, tenantID int64) (int, error
 	return n, nil
 }
 
-func (r *Repository) Create(ctx context.Context, tenantID int64, t Target, note string) (string, error) {
+func (r *Repository) CreateIfAllowed(ctx context.Context, tenantID int64, t Target, note string) (string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin contact request: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Serialize the "check then insert" window for this tenant/property pair.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`,
+		fmt.Sprintf("contact:%d:%d", tenantID, t.PropertyID)); err != nil {
+		return "", fmt.Errorf("lock contact request: %w", err)
+	}
+	var recent int
+	if err := tx.QueryRow(ctx, `
+		SELECT COUNT(*)::int FROM contact_requests
+		WHERE tenant_id = $1 AND property_id = $2
+		  AND created_at > now() - interval '7 days'
+	`, tenantID, t.PropertyID).Scan(&recent); err != nil {
+		return "", fmt.Errorf("count recent contacts: %w", err)
+	}
+	if recent > 0 {
+		return "", ErrAlreadyContacted
+	}
+	var today int
+	if err := tx.QueryRow(ctx, `
+		SELECT COUNT(*)::int FROM contact_requests
+		WHERE tenant_id = $1 AND created_at >= date_trunc('day', now())
+	`, tenantID).Scan(&today); err != nil {
+		return "", fmt.Errorf("count today's contacts: %w", err)
+	}
+	if today >= 3 {
+		return "", ErrDailyLimit
+	}
+
 	consent, _ := json.Marshal(map[string]bool{"contactConsent": true})
 	var uuid string
-	err := r.pool.QueryRow(ctx, `
+	if err := tx.QueryRow(ctx, `
 		INSERT INTO contact_requests (
 			tenant_id, landlord_id, property_id, status, note, consent_snapshot
 		)
 		VALUES ($1, $2, $3, 'pending', $4, $5::jsonb)
 		RETURNING uuid::text
-	`, tenantID, t.LandlordID, t.PropertyID, note, string(consent)).Scan(&uuid)
-	if err != nil {
+	`, tenantID, t.LandlordID, t.PropertyID, note, string(consent)).Scan(&uuid); err != nil {
 		return "", fmt.Errorf("create contact request: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit contact request: %w", err)
 	}
 	return uuid, nil
 }

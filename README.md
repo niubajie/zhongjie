@@ -1,6 +1,6 @@
 # 房屋中介小程序 · 工程
 
-这是《房屋中介小程序/技术方案-v1.3.md》的 M1 可运行实现。
+这是《房屋中介小程序/技术方案-v1.5.md》的 M1 可运行实现。
 
 当前已打通：
 
@@ -25,7 +25,7 @@
 ├── miniprogram/              微信原生小程序（TypeScript）
 ├── admin-web/                React + Vite 管理站
 ├── docker-compose.yml        本地 PostgreSQL 18 + Redis
-└── 技术方案-v1.3.md          方案定稿
+└── 技术方案-v1.5.md          方案定稿
 ```
 
 ## 本地启动
@@ -156,7 +156,7 @@ npm run dev
 - 管理站文字录入：解析楼宇/面积/租金，按房东手机号匹配后创建房源
 - 导入任务、楼宇词典、联系记录、30 天巡检列表
 - 房源上架/下架审核（写 `audit_logs`）
-- TOTP 绑定、启用、登录校验
+- TOTP 绑定、启用、登录校验、关闭；连续登录失败 5 次锁定 15 分钟
 - token 只放内存，刷新页面需重新登录
 
 尚未接入：HttpOnly 刷新会话、导入任务管理页面。部署公网前必须补齐。
@@ -194,7 +194,9 @@ cd ../admin-web
 npm run build
 ```
 
-当前环境没有 C 编译器，`go test -race` 无法启用；这是本机限制，不是代码通过。CI 环境需要补 `CGO_ENABLED=1` 和 gcc。
+本机跑 `go test -race` 需要 gcc：`$env:PATH="C:\tools\mingw64\bin;"+$env:PATH; $env:CGO_ENABLED="1"`。
+
+CI 见 [.github/workflows/ci.yml](.github/workflows/ci.yml)：Go 侧 gofmt / vet / test -race / build + PostgreSQL 18 迁移冒烟，前端跑管理站 typecheck/build 与小程序 typecheck。自动部署（CD）待确定服务器与发布方式后补。
 
 ## 已知边界
 
@@ -205,4 +207,5 @@ npm run build
 - 文档导入支持 `.docx` / `.xlsx` 文本字段；截图 OCR、Word/Excel 图片提取、导入任务管理页未接。
 - 管理站录入目前只接文字；图片/视频录入需要 OCR/ASR 服务，先返回未配置。
 - 管理站 token 在内存，刷新即退出；HttpOnly 刷新会话未接。
+- CI 只做校验与迁移冒烟；自动部署（CD）与真机登录回归仍待补。
 - 地图“3D/俯视”和微信订阅消息需要真机/真实小程序账号联调。

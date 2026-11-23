@@ -84,21 +84,6 @@ func (s *Service) Create(ctx context.Context, tenantID int64, in CreateInput) (R
 	if err != nil {
 		return Reveal{}, err
 	}
-	recent, err := s.repo.CountRecent(ctx, tenantID, target.PropertyID)
-	if err != nil {
-		return Reveal{}, err
-	}
-	if recent > 0 {
-		return Reveal{}, ErrAlreadyContacted
-	}
-	today, err := s.repo.CountToday(ctx, tenantID)
-	if err != nil {
-		return Reveal{}, err
-	}
-	if today >= 3 {
-		return Reveal{}, ErrDailyLimit
-	}
-
 	landlord, err := s.repo.FindLandlord(ctx, target.LandlordID)
 	if err != nil {
 		return Reveal{}, err
@@ -119,7 +104,7 @@ func (s *Service) Create(ctx context.Context, tenantID int64, in CreateInput) (R
 		}
 	}
 
-	requestUUID, err := s.repo.Create(ctx, tenantID, target, clip(in.Note, 200))
+	requestUUID, err := s.repo.CreateIfAllowed(ctx, tenantID, target, clip(in.Note, 200))
 	if err != nil {
 		return Reveal{}, err
 	}

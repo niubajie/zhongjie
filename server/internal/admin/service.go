@@ -17,18 +17,21 @@ var (
 	ErrDisabled           = errors.New("账号已禁用")
 	ErrTOTPRequired       = errors.New("需要动态验证码")
 	ErrTOTPInvalid        = errors.New("动态验证码不正确")
+	ErrTOTPSetupRequired  = errors.New("请先生成 TOTP 密钥")
+	ErrLoginLocked        = errors.New("登录失败次数过多，请 15 分钟后再试")
 	ErrInvalidStatus      = errors.New("房源状态不正确")
 	ErrInvalidBuilding    = errors.New("楼宇名称、区域、类型或坐标不正确")
 )
 
 type Service struct {
-	repo   *Repository
-	pii    *secure.PII
-	tokens *auth.Manager
+	repo     *Repository
+	pii      *secure.PII
+	tokens   *auth.Manager
+	throttle *loginThrottle
 }
 
 func NewService(repo *Repository, pii *secure.PII, tokens *auth.Manager) *Service {
-	return &Service{repo: repo, pii: pii, tokens: tokens}
+	return &Service{repo: repo, pii: pii, tokens: tokens, throttle: newLoginThrottle()}
 }
 
 func (s *Service) Login(ctx context.Context, username, password, code string) (LoginResult, error) {
@@ -36,8 +39,12 @@ func (s *Service) Login(ctx context.Context, username, password, code string) (L
 	if username == "" || password == "" {
 		return LoginResult{}, ErrInvalidCredentials
 	}
+	if s.throttle.locked(username) > 0 {
+		return LoginResult{}, ErrLoginLocked
+	}
 	a, err := s.repo.FindByUsername(ctx, username)
 	if errors.Is(err, ErrNotFound) {
+		// 不存在的账号不计数，避免随机用户名撑大内存；真实账号仍受锁定保护。
 		return LoginResult{}, ErrInvalidCredentials
 	}
 	if err != nil {
@@ -45,6 +52,7 @@ func (s *Service) Login(ctx context.Context, username, password, code string) (L
 	}
 	ok, err := VerifyPassword(password, a.PasswordHash)
 	if err != nil || !ok {
+		s.throttle.fail(username)
 		return LoginResult{}, ErrInvalidCredentials
 	}
 	if a.Status != "active" {
@@ -59,9 +67,11 @@ func (s *Service) Login(ctx context.Context, username, password, code string) (L
 			return LoginResult{}, fmt.Errorf("decrypt totp secret: %w", err)
 		}
 		if !totp.Validate(strings.TrimSpace(code), secret) {
+			s.throttle.fail(username)
 			return LoginResult{}, ErrTOTPInvalid
 		}
 	}
+	s.throttle.reset(username)
 
 	token, exp, err := s.tokens.Issue(a.ID, a.UUID, a.Role)
 	if err != nil {
@@ -80,10 +90,23 @@ func (s *Service) Get(ctx context.Context, id int64) (Admin, error) {
 	return s.repo.FindByID(ctx, id)
 }
 
-func (s *Service) SetupTOTP(ctx context.Context, id int64) (string, string, error) {
+func (s *Service) SetupTOTP(ctx context.Context, id int64, code string) (string, string, error) {
 	a, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return "", "", err
+	}
+	// 已开启 TOTP 时，重新绑定必须先验证当前验证码，避免仅凭登录态替换密钥。
+	if a.TOTPEnabled {
+		if strings.TrimSpace(code) == "" {
+			return "", "", ErrTOTPRequired
+		}
+		current, err := s.pii.DecryptString(a.TOTPSecretEnc)
+		if err != nil {
+			return "", "", err
+		}
+		if !totp.Validate(strings.TrimSpace(code), current) {
+			return "", "", ErrTOTPInvalid
+		}
 	}
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      "房屋中介管理站",
@@ -109,7 +132,7 @@ func (s *Service) EnableTOTP(ctx context.Context, id int64, code string) error {
 		return err
 	}
 	if len(a.TOTPSecretEnc) == 0 {
-		return ErrTOTPRequired
+		return ErrTOTPSetupRequired
 	}
 	secret, err := s.pii.DecryptString(a.TOTPSecretEnc)
 	if err != nil {
@@ -130,7 +153,7 @@ func (s *Service) DisableTOTP(ctx context.Context, id int64, code string) error 
 	if err != nil {
 		return err
 	}
-	if len(a.TOTPSecretEnc) == 0 {
+	if !a.TOTPEnabled {
 		return nil
 	}
 	secret, err := s.pii.DecryptString(a.TOTPSecretEnc)
@@ -140,7 +163,7 @@ func (s *Service) DisableTOTP(ctx context.Context, id int64, code string) error 
 	if !totp.Validate(strings.TrimSpace(code), secret) {
 		return ErrTOTPInvalid
 	}
-	if err := s.repo.SetTOTPEnabled(ctx, id, false); err != nil {
+	if err := s.repo.ClearTOTP(ctx, id); err != nil {
 		return err
 	}
 	s.audit(ctx, id, "admin_totp_disable", "admin_user", a.UUID)
